@@ -6,6 +6,7 @@
 - Final desktop implementation capture: `C:\Users\87271\Documents\ChatGPT\谭成义健身减脂计划\app\qa-implementation.png`
 - Side-by-side comparison: `C:\Users\87271\Documents\ChatGPT\谭成义健身减脂计划\app\qa-comparison.png`
 - Real mobile evidence: `C:\Users\87271\Documents\ChatGPT\谭成义健身减脂计划\qa-evidence-final2\01-home.png` through `05-checkin-sheet.png`
+- iPhone Safari zoom report: `C:\Users\87271\AppData\Local\Temp\codex-clipboard-660f116a-65d1-4ecf-8056-eb7c6e0df567.jpg`
 
 ## Viewports checked
 
@@ -34,6 +35,7 @@
 - Removed the inactive keyboard from layout and verified navigation/save returns the app scroll position to the top.
 - Hid the preview-only touch cursor on real phone widths.
 - Raised key touch targets to at least 44 px and raised small supporting copy to at least 11 px with stronger contrast.
+- Prevented iPhone Safari focus zoom by rendering every editable input at 16 px on phone-width viewports.
 - Added explicit demo mode and stage IDs so first real entry clears examples atomically and same-day review records cannot leak across stages.
 - Added duplicate meal-submit protection and prevented slow AI responses from overwriting manual edits.
 
@@ -44,6 +46,7 @@
 - `npm run check:runtime`: passed; 28 protected runtime files unchanged.
 - Logic review: no release-blocking P0 or P1 issue.
 - Visual review: no unresolved P0, P1, or P2 issue.
+- iPhone focus regression: at 390 × 844, all seven profile inputs computed to 16 px; `visualViewport.scale` stayed at 1 before focus, while the keyboard was visible, and after dismissal; viewport width and scroll width both remained 390 px.
 
 Known product boundaries are intentional for this first version: without a configured server-side vision endpoint, photo entry falls back to manual macro confirmation; data remains local to the current browser; WeChat authentication and reminders require a later backend integration.
 

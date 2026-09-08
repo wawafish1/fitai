@@ -1092,6 +1092,14 @@ button {
     --mobile-safe-area-height: env(safe-area-inset-bottom, 0px);
   }
 
+  /* iOS Safari automatically zooms the whole page when a focused form control
+     renders below 16px. Keep native keyboard focus at the current page scale. */
+  .field-label-custom input,
+  .multiplier-row input,
+  .mobile-field input {
+    font-size: 16px;
+  }
+
   .screen-content {
     padding-top: max(24px, env(safe-area-inset-top, 20px));
   }
