@@ -7,6 +7,7 @@
 - The selected visual target is the first generated concept: a bright, calm, green nutrition-coach dashboard.
 - Keep the product deliberately simple. Preserve only the core flows: photograph a meal, confirm macros, log weight/waist and body state, view trends, and receive a 10–15 day carbohydrate review.
 - Prioritize attractive, spacious mobile UI over feature density. Do not add social, community, gamification, or admin features unless the user asks.
+- Training durations must accommodate two-hour strength sessions and custom minutes; retain mobile native inputs. Use inline plus/minus controls for training/rest cadence, without a native select popup. Keep tab selection to icon/text color, without an overline. Use plain recommendation copy without the prefix “视频建议”, and omit the extra “每公斤体重” kicker above nutrition coefficients.
 - The initial release is single-user and local-first, but data models should remain easy to migrate to authenticated multi-user storage later.
 - Nutrition adjustments must reflect the referenced Tan Chengyi video logic: fat stays within 0.6–0.8 g/kg, protein is generally 1.2–2.0 g/kg, carbohydrate starts around 2.5–3.5 g/kg, and carbohydrate changes are driven by hunger/craving plus training and mental state rather than automatic daily cuts.
 

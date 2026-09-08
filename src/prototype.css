@@ -559,16 +559,6 @@ button {
   color: var(--green);
 }
 
-.bottom-nav button.active::before {
-  position: absolute;
-  top: 4px;
-  width: 26px;
-  height: 3px;
-  border-radius: 4px;
-  background: var(--green);
-  content: "";
-}
-
 .inner-screen {
   display: flex;
   flex-direction: column;
@@ -853,13 +843,13 @@ button {
 
 .duration-options {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
 .duration-options button {
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   padding: 6px 3px;
   border: 1px solid #dfe5dc;
   border-radius: 10px;
@@ -876,9 +866,7 @@ button {
 }
 
 .schedule-setting {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
 }
 
 .schedule-setting > span {
@@ -888,26 +876,61 @@ button {
 
 .schedule-controls {
   display: flex;
-  gap: 6px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.schedule-controls label {
+.schedule-stepper {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  flex: 1 1 135px;
+  gap: 2px;
   color: #687365;
-  font-size: 10px;
+  font-size: 11px;
 }
 
-.schedule-controls select {
-  width: 48px;
-  height: 40px;
+.schedule-stepper button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border: 1px solid #dfe5dc;
   border-radius: 10px;
-  outline: none;
-  color: var(--ink);
+  color: var(--green-dark);
   background: white;
+}
+
+.schedule-stepper button:disabled {
+  color: #b0b7ac;
+  background: #f7f8f6;
+}
+
+.schedule-stepper output {
+  min-width: 18px;
   text-align: center;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.duration-custom {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.duration-custom input {
+  width: 84px;
+  flex: 0 0 84px;
+}
+
+.training-hint {
+  margin: 0;
+  color: #687365;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .estimate-grid {

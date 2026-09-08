@@ -8,6 +8,7 @@ import {
   Cross2Icon,
   HomeIcon,
   InfoCircledIcon,
+  MinusIcon,
   PersonIcon,
   PlusIcon,
   ReloadIcon,
@@ -108,8 +109,10 @@ type MealDraft = {
 
 type ProfileDraft = Omit<
   Profile,
-  "age" | "height" | "weight" | "waist" | "carbMultiplier" | "proteinMultiplier" | "fatMultiplier"
+  "age" | "height" | "weight" | "waist" | "carbMultiplier" | "proteinMultiplier" | "fatMultiplier" | "strengthMinutes" | "cardioMinutes"
 > & {
+  strengthMinutes: string;
+  cardioMinutes: string;
   age: string;
   height: string;
   weight: string;
@@ -156,6 +159,8 @@ function inRange(value: string | number, min: number, max: number) {
 function makeProfileDraft(profile: Profile): ProfileDraft {
   return {
     ...profile,
+    strengthMinutes: String(profile.strengthMinutes),
+    cardioMinutes: String(profile.cardioMinutes),
     age: String(profile.age),
     height: String(profile.height),
     weight: String(profile.weight),
@@ -334,8 +339,8 @@ function loadData(): AppData {
       trainingIntensity: ["light", "moderate", "hard"].includes(rawProfile.trainingIntensity || "")
         ? rawProfile.trainingIntensity as TrainingIntensity
         : defaults.profile.trainingIntensity,
-      strengthMinutes: clamp(round(finiteNumber(rawProfile.strengthMinutes, defaults.profile.strengthMinutes)), 0, 120),
-      cardioMinutes: clamp(round(finiteNumber(rawProfile.cardioMinutes, defaults.profile.cardioMinutes)), 0, 120),
+      strengthMinutes: clamp(round(finiteNumber(rawProfile.strengthMinutes, defaults.profile.strengthMinutes)), 0, 300),
+      cardioMinutes: clamp(round(finiteNumber(rawProfile.cardioMinutes, defaults.profile.cardioMinutes)), 0, 300),
       trainingDays: clamp(round(finiteNumber(rawProfile.trainingDays, defaults.profile.trainingDays)), 1, 6),
       restDays: clamp(round(finiteNumber(rawProfile.restDays, defaults.profile.restDays)), 1, 3),
       planStart: rawProfile.planStart || rawProfile.stageStart || dateKey(),
@@ -728,6 +733,8 @@ export default function Prototype() {
   const draftProfileForEstimate: Profile = {
     ...data.profile,
     ...profileDraft,
+    strengthMinutes: finiteNumber(profileDraft.strengthMinutes),
+    cardioMinutes: finiteNumber(profileDraft.cardioMinutes),
     age: finiteNumber(profileDraft.age, data.profile.age),
     height: finiteNumber(profileDraft.height, data.profile.height),
     weight: finiteNumber(profileDraft.weight, currentWeight),
@@ -743,6 +750,9 @@ export default function Prototype() {
     draftProfileForEstimate.weight * draftProfileForEstimate.fatMultiplier,
   );
   const profileDraftValid =
+    [profileDraft.strengthMinutes, profileDraft.cardioMinutes].every((value) =>
+      value.trim() !== "" && inRange(value, 0, 300) && Number.isInteger(Number(value)),
+    ) &&
     inRange(profileDraft.age, 18, 80) &&
     inRange(profileDraft.height, 100, 230) &&
     inRange(profileDraft.weight, 30, 300) &&
@@ -942,6 +952,12 @@ export default function Prototype() {
   };
 
   const saveProfile = () => {
+    if (![profileDraft.strengthMinutes, profileDraft.cardioMinutes].every((value) =>
+      value.trim() !== "" && inRange(value, 0, 300) && Number.isInteger(Number(value)),
+    )) {
+      setProfileError("训练时长请填写 0–300 的整数分钟，不训练可填 0。");
+      return;
+    }
     if (!profileDraftValid) {
       setProfileError("请检查各项数值是否在页面标注的范围内。");
       return;
@@ -954,6 +970,8 @@ export default function Prototype() {
     const startsNewStage = startingFromDemo || coefficientsChanged;
     const normalized: Profile = {
       ...profileDraft,
+      strengthMinutes: Number(profileDraft.strengthMinutes),
+      cardioMinutes: Number(profileDraft.cardioMinutes),
       age: Number(profileDraft.age),
       height: Number(profileDraft.height),
       weight: Number(profileDraft.weight),
@@ -1280,20 +1298,30 @@ export default function Prototype() {
               <div className="training-setting">
                 <span><strong>力量训练</strong><small>每个训练日</small></span>
                 <div className="duration-options">
-                  {[0, 30, 45, 60].map((minutes) => <button key={minutes} aria-pressed={profileDraft.strengthMinutes === minutes} className={profileDraft.strengthMinutes === minutes ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, strengthMinutes: minutes })}>{minutes ? `${minutes} 分` : "无"}</button>)}
+                  {[0, 30, 45, 60, 90, 120].map((minutes) => <button key={minutes} aria-pressed={profileDraft.strengthMinutes !== "" && Number(profileDraft.strengthMinutes) === minutes} className={profileDraft.strengthMinutes !== "" && Number(profileDraft.strengthMinutes) === minutes ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, strengthMinutes: String(minutes) })}>{minutes ? `${minutes} 分` : "无"}</button>)}
                 </div>
+                <label className="field-label-custom duration-custom">自定义力量时长（分钟）<AdaptiveInput inputMode="numeric" placeholder="例如 120" value={profileDraft.strengthMinutes} onChange={(event) => setProfileDraft({ ...profileDraft, strengthMinutes: event.target.value })} /></label>
+                <p className="training-hint">填写整次训练时长，含正常组间休息；长时间闲聊、等待等请扣除。休息较多时，可选较低强度。</p>
               </div>
               <div className="training-setting">
-                <span><strong>有氧训练</strong><small>视频建议约 30–40 分钟</small></span>
+                <span><strong>有氧训练</strong><small>建议 30–40 分钟</small></span>
                 <div className="duration-options">
-                  {[0, 20, 30, 40].map((minutes) => <button key={minutes} aria-pressed={profileDraft.cardioMinutes === minutes} className={profileDraft.cardioMinutes === minutes ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, cardioMinutes: minutes })}>{minutes ? `${minutes} 分` : "无"}</button>)}
+                  {[0, 20, 30, 40, 45, 60].map((minutes) => <button key={minutes} aria-pressed={profileDraft.cardioMinutes !== "" && Number(profileDraft.cardioMinutes) === minutes} className={profileDraft.cardioMinutes !== "" && Number(profileDraft.cardioMinutes) === minutes ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, cardioMinutes: String(minutes) })}>{minutes ? `${minutes} 分` : "无"}</button>)}
                 </div>
+                <label className="field-label-custom duration-custom">自定义有氧时长（分钟）<AdaptiveInput inputMode="numeric" placeholder="例如 35" value={profileDraft.cardioMinutes} onChange={(event) => setProfileDraft({ ...profileDraft, cardioMinutes: event.target.value })} /></label>
               </div>
               <div className="training-setting schedule-setting">
                 <span><strong>练休节奏</strong><small>按计划开始日循环</small></span>
                 <div className="schedule-controls">
-                  <label>练<select value={profileDraft.trainingDays} onChange={(event) => setProfileDraft({ ...profileDraft, trainingDays: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6].map((days) => <option key={days} value={days}>{days}</option>)}</select>天</label>
-                  <label>休<select value={profileDraft.restDays} onChange={(event) => setProfileDraft({ ...profileDraft, restDays: Number(event.target.value) })}>{[1, 2, 3].map((days) => <option key={days} value={days}>{days}</option>)}</select>天</label>
+                  {([ ["trainingDays", "练", 6], ["restDays", "休", 3] ] as const).map(([key, label, max]) => (
+                    <div className="schedule-stepper" role="group" aria-label={`${label}几天`} key={key}>
+                      <span>{label}</span>
+                      <button aria-label={`减少${label}的天数`} disabled={profileDraft[key] <= 1} onClick={() => setProfileDraft({ ...profileDraft, [key]: Math.max(1, profileDraft[key] - 1) })}><MinusIcon /></button>
+                      <output aria-live="polite">{profileDraft[key]}</output>
+                      <button aria-label={`增加${label}的天数`} disabled={profileDraft[key] >= max} onClick={() => setProfileDraft({ ...profileDraft, [key]: Math.min(max, profileDraft[key] + 1) })}><PlusIcon /></button>
+                      <span>天</span>
+                    </div>
+                  ))}
                 </div>
               </div>
               <div className="estimate-grid">
@@ -1304,7 +1332,7 @@ export default function Prototype() {
               <p className="profile-weight-note">静态消耗采用 Mifflin–St Jeor 静息能量 × 1.2；运动用训练时长和强度估算，仅作趋势参考。</p>
             </section>
             <section className="surface form-surface">
-              <div className="section-heading compact"><div><p className="section-kicker">每公斤体重</p><h2>当前营养系数</h2></div></div>
+              <div className="section-heading compact"><h2>当前营养系数</h2></div>
               <p className="profile-weight-note">目标克数 = 体重 × 系数；按当前填写值折算摄入约 {draftTargetCalories} kcal（碳水/蛋白质每克 4 kcal，脂肪每克 9 kcal）。</p>
               {([
                 ["carbMultiplier", "碳水", "2.5–3.5g 起步"],
@@ -1318,7 +1346,7 @@ export default function Prototype() {
                 </label>
               ))}
               <div className="review-length">
-                <span><strong>复盘周期</strong><small>视频建议约 10 天或半个月</small></span>
+                <span><strong>复盘周期</strong><small>建议约 10 天或半个月</small></span>
                 <div className="segmented">
                   {[10, 15].map((days) => <button key={days} aria-pressed={profileDraft.reviewDays === days} className={profileDraft.reviewDays === days ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, reviewDays: days as 10 | 15 })}>{days} 天</button>)}
                 </div>
