@@ -61,6 +61,44 @@ test("does not turn missing API or write requests into the app shell", async () 
   }
 });
 
+test("analyzes a meal photo through the configured server-side model", async () => {
+  const form = new FormData();
+  form.append("image", new Blob(["image"], { type: "image/jpeg" }), "meal.jpg");
+  let upstreamAuthorization = "";
+  const response = await worker.fetch(
+    new Request("https://example.test/api/analyze-meal", { method: "POST", body: form }),
+    {
+      AI_API_KEY: "test-secret",
+      AI_FETCH: async (_url, options) => {
+        upstreamAuthorization = options.headers.authorization;
+        return Response.json({
+          choices: [{ message: { content: '{"label":"午餐","foods":"米饭 150g、鸡胸肉 120g","carbs":45,"protein":38,"fat":9,"calories":413}' } }],
+        });
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamAuthorization, "Bearer test-secret");
+  assert.deepEqual(await response.json(), {
+    label: "午餐",
+    foods: "米饭 150g、鸡胸肉 120g",
+    carbs: 45,
+    protein: 38,
+    fat: 9,
+    calories: 413,
+  });
+});
+
+test("keeps the AI key server-side and reports missing configuration", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.test/api/analyze-meal", { method: "POST", body: new FormData() }),
+    {},
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "ai_not_configured" });
+});
+
 test("emits the files required by Sites packaging", async () => {
   await access(new URL("../dist/client/index.html", import.meta.url));
   await access(new URL("../dist/server/index.js", import.meta.url));

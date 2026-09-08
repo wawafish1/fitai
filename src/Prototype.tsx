@@ -788,8 +788,7 @@ export default function Prototype() {
       setMealOpen(true);
       setAnalysisMode("analyzing");
 
-      const endpoint = import.meta.env.VITE_AI_MEAL_ENDPOINT;
-      if (!endpoint) throw new Error("AI endpoint is not configured");
+      const endpoint = import.meta.env.VITE_AI_MEAL_ENDPOINT || "/api/analyze-meal";
       const form = new FormData();
       form.append("image", compressed.blob, "meal.jpg");
       const response = await fetch(endpoint, { method: "POST", body: form });
@@ -1405,7 +1404,7 @@ export default function Prototype() {
           <div className={`analysis-status ${analysisMode}`}>
             {analysisMode === "analyzing" && <><ReloadIcon className="spin" />正在尝试 AI 识别…</>}
             {analysisMode === "ai" && <><CheckCircledIcon />AI 已给出初步估算，请确认</>}
-            {analysisMode === "manual" && <><InfoCircledIcon />视觉 AI 尚未配置，请先手动填写</>}
+            {analysisMode === "manual" && <><InfoCircledIcon />AI 识别暂时失败，请手动填写</>}
           </div>
           <div className="choice-row meal-type-row">
             {["早餐", "午餐", "晚餐", "加餐"].map((label) => <button key={label} aria-pressed={mealDraft.label === label} className={mealDraft.label === label ? "selected" : ""} onClick={() => editMealDraft({ label })}>{label}</button>)}
