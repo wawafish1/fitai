@@ -7,6 +7,7 @@
 - Side-by-side comparison: `C:\Users\87271\Documents\ChatGPT\谭成义健身减脂计划\app\qa-comparison.png`
 - Real mobile evidence: `C:\Users\87271\Documents\ChatGPT\谭成义健身减脂计划\qa-evidence-final2\01-home.png` through `05-checkin-sheet.png`
 - iPhone Safari zoom report: `C:\Users\87271\AppData\Local\Temp\codex-clipboard-660f116a-65d1-4ecf-8056-eb7c6e0df567.jpg`
+- iPhone duplicate-keyboard report: `C:\Users\87271\AppData\Local\Temp\codex-clipboard-76f7b040-0962-4c1a-9e15-1f7d499af0a6.jpg`
 
 ## Viewports checked
 
@@ -36,6 +37,7 @@
 - Hid the preview-only touch cursor on real phone widths.
 - Raised key touch targets to at least 44 px and raised small supporting copy to at least 11 px with stronger contrast.
 - Prevented iPhone Safari focus zoom by rendering every editable input at 16 px on phone-width viewports.
+- Added adaptive inputs: real phone-width browsers use only the native system keyboard, while the protected desktop device preview retains its simulated keyboard.
 - Added explicit demo mode and stage IDs so first real entry clears examples atomically and same-day review records cannot leak across stages.
 - Added duplicate meal-submit protection and prevented slow AI responses from overwriting manual edits.
 
@@ -47,6 +49,7 @@
 - Logic review: no release-blocking P0 or P1 issue.
 - Visual review: no unresolved P0, P1, or P2 issue.
 - iPhone focus regression: at 390 × 844, all seven profile inputs computed to 16 px; `visualViewport.scale` stayed at 1 before focus, while the keyboard was visible, and after dismissal; viewport width and scroll width both remained 390 px.
+- Keyboard-mode regression: at 390 × 844, focus stayed on the native input while the simulated keyboard state remained false, its dock remained hidden, and no simulated “完成” control rendered. At 1200 × 900, the desktop preview still activated its simulated keyboard as intended.
 
 Known product boundaries are intentional for this first version: without a configured server-side vision endpoint, photo entry falls back to manual macro confirmation; data remains local to the current browser; WeChat authentication and reminders require a later backend integration.
 

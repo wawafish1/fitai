@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type InputHTMLAttributes, useEffect, useRef, useState } from "react";
 import {
   BarChartIcon,
   CalendarIcon,
@@ -111,6 +111,22 @@ type ProfileDraft = Omit<
 const STORAGE_KEY = "carb-stage-coach-v3";
 const PHOTO_DB = "carb-stage-coach-photos";
 const PHOTO_STORE = "photos";
+
+function AdaptiveInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  const [usesNativeKeyboard, setUsesNativeKeyboard] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 600px)").matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 600px)");
+    const syncMode = () => setUsesNativeKeyboard(media.matches);
+    syncMode();
+    media.addEventListener("change", syncMode);
+    return () => media.removeEventListener("change", syncMode);
+  }, []);
+
+  return usesNativeKeyboard ? <input {...props} /> : <KeyboardInput {...props} />;
+}
 
 const round = (value: number) => Math.round(value);
 const clamp = (value: number, min: number, max: number) =>
@@ -1118,11 +1134,11 @@ export default function Prototype() {
             </header>
             <section className="surface form-surface">
               <h2>基础资料</h2>
-              <label className="field-label-custom">称呼<KeyboardInput value={profileDraft.name} onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value })} /></label>
+              <label className="field-label-custom">称呼<AdaptiveInput value={profileDraft.name} onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value })} /></label>
               <div className="field-grid profile-measures">
-                <label className="field-label-custom">身高 cm<KeyboardInput inputMode="decimal" value={profileDraft.height} onChange={(event) => setProfileDraft({ ...profileDraft, height: event.target.value })} /></label>
-                <label className="field-label-custom">体重 kg<KeyboardInput inputMode="decimal" value={profileDraft.weight} onChange={(event) => setProfileDraft({ ...profileDraft, weight: event.target.value })} /></label>
-                <label className="field-label-custom">腰围 cm<KeyboardInput inputMode="decimal" value={profileDraft.waist} onChange={(event) => setProfileDraft({ ...profileDraft, waist: event.target.value })} /></label>
+                <label className="field-label-custom">身高 cm<AdaptiveInput inputMode="decimal" value={profileDraft.height} onChange={(event) => setProfileDraft({ ...profileDraft, height: event.target.value })} /></label>
+                <label className="field-label-custom">体重 kg<AdaptiveInput inputMode="decimal" value={profileDraft.weight} onChange={(event) => setProfileDraft({ ...profileDraft, weight: event.target.value })} /></label>
+                <label className="field-label-custom">腰围 cm<AdaptiveInput inputMode="decimal" value={profileDraft.waist} onChange={(event) => setProfileDraft({ ...profileDraft, waist: event.target.value })} /></label>
               </div>
               <label className="field-label-custom">体质倾向</label>
               <div className="choice-row">
@@ -1148,7 +1164,7 @@ export default function Prototype() {
               ] as ["carbMultiplier" | "proteinMultiplier" | "fatMultiplier", string, string][]).map(([key, label, hint]) => (
                 <label className="multiplier-row" key={key}>
                   <span><strong>{label}</strong><small>{hint}</small></span>
-                  <KeyboardInput inputMode="decimal" value={profileDraft[key]} onChange={(event) => setProfileDraft({ ...profileDraft, [key]: event.target.value })} />
+                  <AdaptiveInput inputMode="decimal" value={profileDraft[key]} onChange={(event) => setProfileDraft({ ...profileDraft, [key]: event.target.value })} />
                   <b>g/kg</b>
                 </label>
               ))}
@@ -1217,14 +1233,14 @@ export default function Prototype() {
           <div className="choice-row meal-type-row">
             {["早餐", "午餐", "晚餐", "加餐"].map((label) => <button key={label} aria-pressed={mealDraft.label === label} className={mealDraft.label === label ? "selected" : ""} onClick={() => editMealDraft({ label })}>{label}</button>)}
           </div>
-          <label className="field-label-custom">识别到的食物<KeyboardInput placeholder="例如：米饭、鸡胸肉、西兰花" value={mealDraft.foods} onChange={(event) => editMealDraft({ foods: event.target.value })} /></label>
+          <label className="field-label-custom">识别到的食物<AdaptiveInput placeholder="例如：米饭、鸡胸肉、西兰花" value={mealDraft.foods} onChange={(event) => editMealDraft({ foods: event.target.value })} /></label>
           <div className="macro-input-grid">
             {([
               ["carbs", "碳水"],
               ["protein", "蛋白质"],
               ["fat", "脂肪"],
             ] as [MacroKey, string][]).map(([key, label]) => (
-              <label className="field-label-custom" key={key}>{label} g<KeyboardInput inputMode="decimal" placeholder="0" value={mealDraft[key]} onChange={(event) => editMealDraft({ [key]: event.target.value })} /></label>
+              <label className="field-label-custom" key={key}>{label} g<AdaptiveInput inputMode="decimal" placeholder="0" value={mealDraft[key]} onChange={(event) => editMealDraft({ [key]: event.target.value })} /></label>
             ))}
           </div>
           {mealError && <p className="form-error" role="alert">{mealError}</p>}
@@ -1237,8 +1253,8 @@ export default function Prototype() {
         <div className="sheet-form">
           <button className="sheet-cancel" onClick={() => { if (keyboard.visible) keyboard.hide(); setCheckInOpen(false); }}><Cross2Icon />取消</button>
           <div className="field-grid">
-            <label className="field-label-custom">体重 kg<KeyboardInput inputMode="decimal" value={checkInDraft.weight} onChange={(event) => setCheckInDraft({ ...checkInDraft, weight: event.target.value })} /></label>
-            <label className="field-label-custom">腰围 cm<KeyboardInput inputMode="decimal" value={checkInDraft.waist} onChange={(event) => setCheckInDraft({ ...checkInDraft, waist: event.target.value })} /></label>
+            <label className="field-label-custom">体重 kg<AdaptiveInput inputMode="decimal" value={checkInDraft.weight} onChange={(event) => setCheckInDraft({ ...checkInDraft, weight: event.target.value })} /></label>
+            <label className="field-label-custom">腰围 cm<AdaptiveInput inputMode="decimal" value={checkInDraft.waist} onChange={(event) => setCheckInDraft({ ...checkInDraft, waist: event.target.value })} /></label>
           </div>
           {([
             ["hunger", "饥饿感", "1 不饿 · 5 很饿"],
