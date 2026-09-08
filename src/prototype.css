@@ -1301,6 +1301,98 @@ button {
   white-space: nowrap !important;
 }
 
+.auth-shell {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 86% 8%, rgba(100, 190, 60, .16), transparent 28%),
+    linear-gradient(180deg, #fbfdf8 0%, #f3f8ef 100%);
+}
+
+.auth-screen {
+  display: flex;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 92px 26px 44px;
+  flex-direction: column;
+  gap: 34px;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-brand > span {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 16px;
+  color: white;
+  background: var(--green);
+  box-shadow: 0 12px 28px rgba(67, 143, 37, .24);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.auth-brand div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.auth-brand strong { font-size: 18px; }
+.auth-brand small { color: var(--muted); font-size: 11px; }
+
+.auth-card {
+  display: flex;
+  padding: 25px 22px;
+  border: 1px solid rgba(218, 226, 214, .85);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 22px 50px rgba(64, 92, 53, .10);
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-card h1 {
+  margin: -7px 0 0;
+  font-size: 26px;
+  letter-spacing: -.7px;
+}
+
+.auth-description,
+.auth-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.auth-note { text-align: center; }
+
+.auth-loading {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quota-note {
+  margin: -2px 3px 0;
+  color: #778173;
+  font-size: 10px;
+  text-align: right;
+}
+
+.logout-button {
+  color: #8d5b50;
+}
+
 @media (max-height: 760px) {
   .screen-content {
     padding-top: 58px;
@@ -1382,5 +1474,9 @@ button {
 
   .screen-content {
     padding-top: max(24px, env(safe-area-inset-top, 20px));
+  }
+
+  .auth-screen {
+    padding-top: max(72px, calc(env(safe-area-inset-top, 20px) + 38px));
   }
 }

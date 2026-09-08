@@ -108,6 +108,9 @@ type MealDraft = {
   previewUrl: string;
 };
 
+type AuthUser = { email: string };
+type AnalysisQuota = { used: number; limit: number };
+
 type ProfileDraft = Omit<
   Profile,
   "age" | "height" | "weight" | "waist" | "carbMultiplier" | "proteinMultiplier" | "fatMultiplier" | "strengthMinutes" | "cardioMinutes"
@@ -126,6 +129,22 @@ type ProfileDraft = Omit<
 const STORAGE_KEY = "carb-stage-coach-v3";
 const PHOTO_DB = "carb-stage-coach-photos";
 const PHOTO_STORE = "photos";
+
+async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: init?.body instanceof FormData
+      ? init.headers
+      : { "content-type": "application/json", ...init?.headers },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || "request_failed") as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return payload as T;
+}
 
 function AdaptiveInput(props: InputHTMLAttributes<HTMLInputElement>) {
   const [usesNativeKeyboard, setUsesNativeKeyboard] = useState(() =>
@@ -616,6 +635,15 @@ function MacroProgress({
 export default function Prototype() {
   const keyboard = useKeyboard();
   const [data, setData] = useState<AppData>(loadData);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginCode, setLoginCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [quota, setQuota] = useState<AnalysisQuota>({ used: 0, limit: 10 });
+  const syncReadyRef = useRef(false);
   const [tab, setTab] = useState<Tab>("today");
   const [mealOpen, setMealOpen] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
@@ -654,12 +682,58 @@ export default function Prototype() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      const key = authUser ? `${STORAGE_KEY}:${authUser.email}` : STORAGE_KEY;
+      window.localStorage.setItem(key, JSON.stringify(data));
       setStorageError("");
     } catch {
       setStorageError("当前浏览器未能保存数据，请检查隐私模式或存储空间。");
     }
-  }, [data]);
+  }, [authUser, data]);
+
+  useEffect(() => {
+    let active = true;
+    const initialize = async () => {
+      try {
+        const session = await apiJson<{ user: AuthUser; analysis: AnalysisQuota }>("/api/auth/me");
+        if (!active) return;
+        setAuthUser(session.user);
+        setQuota(session.analysis);
+        const saved = await apiJson<{ data: AppData | null }>("/api/data");
+        if (!active) return;
+        if (saved.data?.profile) {
+          setData(saved.data);
+          setProfileDraft(makeProfileDraft(saved.data.profile));
+        } else {
+          const userLocal = window.localStorage.getItem(`${STORAGE_KEY}:${session.user.email}`);
+          const candidate = userLocal ? JSON.parse(userLocal) as AppData : data;
+          if (candidate?.profile) {
+            setData(candidate);
+            setProfileDraft(makeProfileDraft(candidate.profile));
+            await apiJson("/api/data", { method: "PUT", body: JSON.stringify({ data: candidate }) });
+          }
+        }
+        window.localStorage.removeItem(STORAGE_KEY);
+        syncReadyRef.current = true;
+      } catch (error) {
+        const status = (error as Error & { status?: number }).status;
+        if (active && status !== 401) setAuthError("暂时无法连接服务器，请稍后重试。");
+      } finally {
+        if (active) setAuthLoading(false);
+      }
+    };
+    void initialize();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!authUser || !syncReadyRef.current) return;
+    const timer = window.setTimeout(() => {
+      apiJson("/api/data", { method: "PUT", body: JSON.stringify({ data }) })
+        .then(() => setStorageError(""))
+        .catch(() => setStorageError("记录已保存在当前设备，暂时未同步到账号。"));
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [authUser, data]);
 
   useEffect(() => {
     const photoMeals = data.meals.filter((meal) => meal.photoId && !photoUrls[meal.id]);
@@ -667,7 +741,11 @@ export default function Prototype() {
     let active = true;
     Promise.all(
       photoMeals.map(async (meal) => {
-        const blob = await getPhoto(meal.photoId!);
+        let blob = await getPhoto(meal.photoId!);
+        if (!blob && authUser) {
+          const response = await fetch(`/api/photos/${encodeURIComponent(meal.photoId!)}`);
+          if (response.ok) blob = await response.blob();
+        }
         return blob ? ([meal.id, URL.createObjectURL(blob)] as const) : null;
       }),
     )
@@ -684,7 +762,7 @@ export default function Prototype() {
     return () => {
       active = false;
     };
-  }, [data.meals]);
+  }, [authUser, data.meals]);
 
   const today = dateKey();
   const todayMeals = data.meals.filter((meal) => meal.date === today);
@@ -794,8 +872,13 @@ export default function Prototype() {
       const form = new FormData();
       form.append("image", compressed.blob, "meal.jpg");
       const response = await fetch(endpoint, { method: "POST", body: form });
-      if (!response.ok) throw new Error("AI endpoint unavailable");
-      const result = (await response.json()) as Partial<Meal>;
+      const result = (await response.json()) as Partial<Meal> & { error?: string; analysis?: AnalysisQuota };
+      if (!response.ok) {
+        if (response.status === 429) setMealError("今天的 10 次 AI 识别额度已用完，明天零点后恢复。");
+        else if (response.status === 401) setMealError("登录状态已过期，请重新登录。");
+        throw new Error(result.error || "AI endpoint unavailable");
+      }
+      if (result.analysis) setQuota(result.analysis);
       if (requestId !== analysisRequestRef.current) return;
       const analyzedCarbs = clamp(finiteNumber(result.carbs), 0, 500);
       const analyzedProtein = clamp(finiteNumber(result.protein), 0, 300);
@@ -825,7 +908,12 @@ export default function Prototype() {
     const [carbs, protein, fat] = mealMacroValues;
     const id = `meal-${Date.now()}`;
     try {
-      if (photoBlob) await storePhoto(id, photoBlob);
+      if (photoBlob) {
+        await storePhoto(id, photoBlob);
+        const form = new FormData();
+        form.append("image", photoBlob, "meal.jpg");
+        await apiJson(`/api/photos/${id}`, { method: "PUT", body: form });
+      }
     } catch {
       setMealError("照片暂时无法保存，请稍后重试。");
       mealSavingRef.current = false;
@@ -1077,6 +1165,105 @@ export default function Prototype() {
     setTab("today");
   };
 
+  const requestLoginCode = async () => {
+    const email = loginEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setAuthError("请输入正确的邮箱地址。");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      await apiJson("/api/auth/request-code", { method: "POST", body: JSON.stringify({ email }) });
+      setLoginEmail(email);
+      setCodeSent(true);
+    } catch (error) {
+      const status = (error as Error & { status?: number }).status;
+      setAuthError(status === 429 ? "验证码发送得太频繁，请一分钟后再试。" : "验证码发送失败，请稍后重试。");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const verifyLoginCode = async () => {
+    if (!/^\d{6}$/.test(loginCode.trim())) {
+      setAuthError("请输入邮件中的 6 位验证码。");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const result = await apiJson<{ user: AuthUser; analysis: AnalysisQuota }>("/api/auth/verify-code", {
+        method: "POST",
+        body: JSON.stringify({ email: loginEmail, code: loginCode.trim() }),
+      });
+      const saved = await apiJson<{ data: AppData | null }>("/api/data");
+      const userLocal = window.localStorage.getItem(`${STORAGE_KEY}:${result.user.email}`);
+      const candidate = saved.data?.profile
+        ? saved.data
+        : userLocal
+          ? JSON.parse(userLocal) as AppData
+          : data;
+      setAuthUser(result.user);
+      setQuota(result.analysis);
+      if (candidate?.profile) {
+        setData(candidate);
+        setProfileDraft(makeProfileDraft(candidate.profile));
+        if (!saved.data) await apiJson("/api/data", { method: "PUT", body: JSON.stringify({ data: candidate }) });
+      }
+      window.localStorage.removeItem(STORAGE_KEY);
+      syncReadyRef.current = true;
+    } catch {
+      setAuthError("验证码不正确或已经过期，请重新获取。");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const logout = async () => {
+    try { await apiJson("/api/auth/logout", { method: "POST", body: "{}" }); } catch { /* session may already be gone */ }
+    syncReadyRef.current = false;
+    setAuthUser(null);
+    setCodeSent(false);
+    setLoginCode("");
+    const fresh = makeDefaultData();
+    setData(fresh);
+    setProfileDraft(makeProfileDraft(fresh.profile));
+  };
+
+  if (authLoading) {
+    return <div className="nutrition-app auth-shell"><div className="auth-loading"><ReloadIcon className="spin" />正在连接轻盈计划…</div></div>;
+  }
+
+  if (!authUser) {
+    return (
+      <div className="nutrition-app auth-shell">
+        <MobileScroll className="app-screen">
+          <main className="auth-screen" aria-label="邮箱登录">
+            <div className="auth-brand"><span>轻</span><div><strong>轻盈计划</strong><small>三个月饮食与身体记录</small></div></div>
+            <section className="auth-card">
+              <p className="eyebrow">欢迎回来</p>
+              <h1>邮箱验证码登录</h1>
+              <p className="auth-description">首次验证会自动创建账号，记录会安全地保存在你的账号中。</p>
+              <label className="field-label-custom">邮箱地址
+                <AdaptiveInput type="email" inputMode="email" autoComplete="email" placeholder="name@example.com" value={loginEmail} disabled={codeSent} onChange={(event) => setLoginEmail(event.target.value)} />
+              </label>
+              {codeSent && <label className="field-label-custom">6 位验证码
+                <AdaptiveInput inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="请输入邮件验证码" value={loginCode} onChange={(event) => setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6))} />
+              </label>}
+              {authError && <p className="form-error" role="alert">{authError}</p>}
+              <button className="primary-button" disabled={authBusy} onClick={codeSent ? verifyLoginCode : requestLoginCode}>
+                {authBusy ? "请稍候…" : codeSent ? "验证并登录" : "获取验证码"}
+              </button>
+              {codeSent && <button className="secondary-button" disabled={authBusy} onClick={() => { setCodeSent(false); setLoginCode(""); setAuthError(""); }}>更换邮箱</button>}
+              <p className="auth-note">验证码 10 分钟内有效。无需设置或记住密码。</p>
+            </section>
+          </main>
+        </MobileScroll>
+      </div>
+    );
+  }
+
   return (
     <div className="nutrition-app">
       <MobileScroll className="app-screen">
@@ -1128,6 +1315,7 @@ export default function Prototype() {
                 <span><strong>照片识别</strong><small>从手机相册选择</small></span>
                 <ChevronRightIcon />
               </button>
+              <p className="quota-note">今日 AI 识别 {quota.used}/{quota.limit} 次 · 北京时间零点重置</p>
             </div>
 
             <section className="surface macro-surface" aria-labelledby="macro-title">
@@ -1267,7 +1455,7 @@ export default function Prototype() {
         {tab === "profile" && (
           <main className="screen-content inner-screen profile-screen" aria-label="个人设置">
             <header className="inner-header">
-              <p className="eyebrow">只保存在当前设备</p>
+              <p className="eyebrow">已同步至 {authUser.email}</p>
               <h1>我的计划</h1>
               <p>先从一个温和区间开始，再跟着身体状态调整。</p>
             </header>
@@ -1371,6 +1559,7 @@ export default function Prototype() {
             {profileError && <p className="form-error" role="alert">{profileError}</p>}
             <button className="primary-button" onClick={saveProfile}>{profileSaved ? <><CheckCircledIcon /> 已保存</> : "保存计划"}</button>
             <button className="secondary-button" onClick={resetDemo}><ReloadIcon />恢复示例数据</button>
+            <button className="secondary-button logout-button" onClick={logout}>退出当前账号</button>
             <p className="safety-note"><InfoCircledIcon />本工具用于记录和整理个人反馈，不构成医疗或营养处方。有疾病、用药或异常不适时请先咨询专业人士。</p>
           </main>
         )}

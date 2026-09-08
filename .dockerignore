@@ -1,0 +1,9 @@
+.git
+.data
+.env
+dist
+node_modules
+playwright-report
+test-results
+qa-*.png
+
