@@ -13,16 +13,20 @@ import {
   ReloadIcon,
 } from "@radix-ui/react-icons";
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
+import { GenderFemale, GenderMale } from "@phosphor-icons/react";
 import "react-circular-progressbar/dist/styles.css";
 import { BottomSheet, KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
 
 type Tab = "today" | "trends" | "profile";
 type BodyType = "easy-gain" | "balanced" | "easy-lean";
 type MacroKey = "carbs" | "protein" | "fat";
+type TrainingIntensity = "light" | "moderate" | "hard";
+type DayMode = "training" | "rest";
 
 type Profile = {
   name: string;
   sex: "male" | "female";
+  age: number;
   height: number;
   weight: number;
   waist: number;
@@ -31,6 +35,11 @@ type Profile = {
   proteinMultiplier: number;
   fatMultiplier: number;
   reviewDays: 10 | 15;
+  trainingIntensity: TrainingIntensity;
+  strengthMinutes: number;
+  cardioMinutes: number;
+  trainingDays: number;
+  restDays: number;
   planStart: string;
   stageStart: string;
   stageId: string;
@@ -84,6 +93,7 @@ type AppData = {
   meals: Meal[];
   checkIns: CheckIn[];
   reviewHistory: ReviewRecord[];
+  dayModes: Record<string, DayMode>;
   demoMode: boolean;
 };
 
@@ -98,8 +108,9 @@ type MealDraft = {
 
 type ProfileDraft = Omit<
   Profile,
-  "height" | "weight" | "waist" | "carbMultiplier" | "proteinMultiplier" | "fatMultiplier"
+  "age" | "height" | "weight" | "waist" | "carbMultiplier" | "proteinMultiplier" | "fatMultiplier"
 > & {
+  age: string;
   height: string;
   weight: string;
   waist: string;
@@ -145,6 +156,7 @@ function inRange(value: string | number, min: number, max: number) {
 function makeProfileDraft(profile: Profile): ProfileDraft {
   return {
     ...profile,
+    age: String(profile.age),
     height: String(profile.height),
     weight: String(profile.weight),
     waist: String(profile.waist),
@@ -189,6 +201,7 @@ function makeDefaultData(): AppData {
     profile: {
       name: "朋友",
       sex: "male",
+      age: 30,
       height: 175,
       weight: 76,
       waist: 85,
@@ -197,6 +210,11 @@ function makeDefaultData(): AppData {
       proteinMultiplier: 1.6,
       fatMultiplier: 0.76,
       reviewDays: 10,
+      trainingIntensity: "moderate",
+      strengthMinutes: 45,
+      cardioMinutes: 30,
+      trainingDays: 3,
+      restDays: 1,
       planStart: daysAgo(5),
       stageStart: daysAgo(5),
       stageId: "demo-stage",
@@ -252,6 +270,7 @@ function makeDefaultData(): AppData {
       isDemo: true,
     })),
     reviewHistory: [],
+    dayModes: {},
     demoMode: true,
   };
 }
@@ -304,6 +323,7 @@ function loadData(): AppData {
       ...rawProfile,
       name: typeof rawProfile.name === "string" ? rawProfile.name : defaults.profile.name,
       sex: rawProfile.sex === "female" ? "female" : "male",
+      age: clamp(round(finiteNumber(rawProfile.age, defaults.profile.age)), 18, 80),
       bodyType: ["easy-gain", "balanced", "easy-lean"].includes(rawProfile.bodyType || "")
         ? rawProfile.bodyType as BodyType
         : defaults.profile.bodyType,
@@ -311,6 +331,13 @@ function loadData(): AppData {
       weight: clamp(finiteNumber(rawProfile.weight, defaults.profile.weight), 30, 300),
       waist: clamp(finiteNumber(rawProfile.waist, defaults.profile.waist), 40, 200),
       reviewDays: rawProfile.reviewDays === 15 ? 15 : 10,
+      trainingIntensity: ["light", "moderate", "hard"].includes(rawProfile.trainingIntensity || "")
+        ? rawProfile.trainingIntensity as TrainingIntensity
+        : defaults.profile.trainingIntensity,
+      strengthMinutes: clamp(round(finiteNumber(rawProfile.strengthMinutes, defaults.profile.strengthMinutes)), 0, 120),
+      cardioMinutes: clamp(round(finiteNumber(rawProfile.cardioMinutes, defaults.profile.cardioMinutes)), 0, 120),
+      trainingDays: clamp(round(finiteNumber(rawProfile.trainingDays, defaults.profile.trainingDays)), 1, 6),
+      restDays: clamp(round(finiteNumber(rawProfile.restDays, defaults.profile.restDays)), 1, 3),
       planStart: rawProfile.planStart || rawProfile.stageStart || dateKey(),
       stageStart: rawProfile.stageStart || dateKey(),
       stageId,
@@ -354,6 +381,9 @@ function loadData(): AppData {
       meals,
       checkIns,
       reviewHistory,
+      dayModes: parsed.dayModes && typeof parsed.dayModes === "object"
+        ? Object.fromEntries(Object.entries(parsed.dayModes).filter(([, mode]) => mode === "training" || mode === "rest"))
+        : {},
     };
   } catch {
     return makeDefaultData();
@@ -437,6 +467,28 @@ function compressPhoto(file: File) {
 
 function macroCalories(carbs: number, protein: number, fat: number) {
   return round(carbs * 4 + protein * 4 + fat * 9);
+}
+
+function restingEnergy(profile: Profile, weight: number) {
+  const sexConstant = profile.sex === "male" ? 5 : -161;
+  return 10 * weight + 6.25 * profile.height - 5 * profile.age + sexConstant;
+}
+
+function exerciseEnergy(weight: number, minutes: number, mets: number) {
+  return Math.max(0, (mets - 1) * 3.5 * weight / 200 * minutes);
+}
+
+function energyEstimate(profile: Profile, weight: number) {
+  const base = Math.max(0, restingEnergy(profile, weight) * 1.2);
+  const strengthMets = { light: 3.5, moderate: 5, hard: 6 }[profile.trainingIntensity];
+  const cardioMets = { light: 4, moderate: 6, hard: 8 }[profile.trainingIntensity];
+  const exercise = exerciseEnergy(weight, profile.strengthMinutes, strengthMets)
+    + exerciseEnergy(weight, profile.cardioMinutes, cardioMets);
+  const trainingDay = base + exercise;
+  const restDay = base;
+  const cycleDays = profile.trainingDays + profile.restDays;
+  const averageDay = (trainingDay * profile.trainingDays + restDay * profile.restDays) / cycleDays;
+  return { base: round(base), exercise: round(exercise), trainingDay: round(trainingDay), restDay: round(restDay), averageDay: round(averageDay) };
 }
 
 function average(items: number[]) {
@@ -649,7 +701,12 @@ export default function Prototype() {
     protein: currentWeight * data.profile.proteinMultiplier,
     fat: currentWeight * data.profile.fatMultiplier,
   };
-  const targetCalories = macroCalories(targets.carbs, targets.protein, targets.fat);
+  const expenditure = energyEstimate(data.profile, currentWeight);
+  const cyclePosition = dayDiff(data.profile.planStart) % (data.profile.trainingDays + data.profile.restDays);
+  const scheduledDayMode: DayMode = cyclePosition < data.profile.trainingDays ? "training" : "rest";
+  const todayMode = data.dayModes[today] || scheduledDayMode;
+  const todayExercise = todayMode === "training" ? expenditure.exercise : 0;
+  const todayExpenditure = expenditure.base + todayExercise;
   const planElapsedDays = dayDiff(data.profile.planStart) + 1;
   const planDay = Math.min(90, planElapsedDays);
   const planComplete = planElapsedDays >= 90;
@@ -668,7 +725,25 @@ export default function Prototype() {
     mealMacroValues.some((value) => value > 0);
   const checkInDraftValid =
     inRange(checkInDraft.weight, 30, 300) && inRange(checkInDraft.waist, 40, 200);
+  const draftProfileForEstimate: Profile = {
+    ...data.profile,
+    ...profileDraft,
+    age: finiteNumber(profileDraft.age, data.profile.age),
+    height: finiteNumber(profileDraft.height, data.profile.height),
+    weight: finiteNumber(profileDraft.weight, currentWeight),
+    waist: finiteNumber(profileDraft.waist, data.profile.waist),
+    carbMultiplier: finiteNumber(profileDraft.carbMultiplier, data.profile.carbMultiplier),
+    proteinMultiplier: finiteNumber(profileDraft.proteinMultiplier, data.profile.proteinMultiplier),
+    fatMultiplier: finiteNumber(profileDraft.fatMultiplier, data.profile.fatMultiplier),
+  };
+  const draftExpenditure = energyEstimate(draftProfileForEstimate, draftProfileForEstimate.weight);
+  const draftTargetCalories = macroCalories(
+    draftProfileForEstimate.weight * draftProfileForEstimate.carbMultiplier,
+    draftProfileForEstimate.weight * draftProfileForEstimate.proteinMultiplier,
+    draftProfileForEstimate.weight * draftProfileForEstimate.fatMultiplier,
+  );
   const profileDraftValid =
+    inRange(profileDraft.age, 18, 80) &&
     inRange(profileDraft.height, 100, 230) &&
     inRange(profileDraft.weight, 30, 300) &&
     inRange(profileDraft.waist, 40, 200) &&
@@ -879,6 +954,7 @@ export default function Prototype() {
     const startsNewStage = startingFromDemo || coefficientsChanged;
     const normalized: Profile = {
       ...profileDraft,
+      age: Number(profileDraft.age),
       height: Number(profileDraft.height),
       weight: Number(profileDraft.weight),
       waist: Number(profileDraft.waist),
@@ -921,6 +997,13 @@ export default function Prototype() {
     setProfileError("");
     setProfileSaved(true);
     window.setTimeout(() => setProfileSaved(false), 1600);
+  };
+
+  const setTodayMode = (mode: DayMode) => {
+    setData((current) => ({
+      ...current,
+      dayModes: { ...current.dayModes, [today]: mode },
+    }));
   };
 
   const applyReview = () => {
@@ -1016,10 +1099,32 @@ export default function Prototype() {
             <section className="surface macro-surface" aria-labelledby="macro-title">
               <div className="section-heading">
                 <div>
-                  <p className="section-kicker">今日目标约 {targetCalories} kcal</p>
+                  <p className="section-kicker">按已记录餐食与今日训练估算</p>
                   <h2 id="macro-title">营养进度</h2>
                 </div>
                 <button className="text-button" onClick={() => setTab("profile")}>目标设置</button>
+              </div>
+              <div className="energy-summary" aria-label="今日摄入与消耗">
+                <div>
+                  <span>摄入</span>
+                  <strong>{round(totals.calories)}<small> kcal</small></strong>
+                  <small>来自今日 {todayMeals.length} 餐</small>
+                </div>
+                <div>
+                  <span>消耗</span>
+                  <strong>{todayExpenditure}<small> kcal</small></strong>
+                  <small>静态 {expenditure.base} + 运动 {todayExercise}</small>
+                </div>
+              </div>
+              <div className="day-mode-row">
+                <span>今天按哪种日程估算</span>
+                <div className="segmented compact-segmented">
+                  {(["training", "rest"] as DayMode[]).map((mode) => (
+                    <button key={mode} aria-pressed={todayMode === mode} className={todayMode === mode ? "selected" : ""} onClick={() => setTodayMode(mode)}>
+                      {mode === "training" ? "训练日" : "休息日"}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="macro-grid">
                 <MacroProgress label="碳水" value={totals.carbs} target={targets.carbs} color="#58ad30" />
@@ -1135,7 +1240,15 @@ export default function Prototype() {
             <section className="surface form-surface">
               <h2>基础资料</h2>
               <label className="field-label-custom">称呼<AdaptiveInput value={profileDraft.name} onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value })} /></label>
+              <div className="sex-field">
+                <span>生理性别</span>
+                <div className="sex-choice" role="group" aria-label="生理性别">
+                  <button aria-label="男性" title="男性" aria-pressed={profileDraft.sex === "male"} className={profileDraft.sex === "male" ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, sex: "male" })}><GenderMale weight="bold" /></button>
+                  <button aria-label="女性" title="女性" aria-pressed={profileDraft.sex === "female"} className={profileDraft.sex === "female" ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, sex: "female" })}><GenderFemale weight="bold" /></button>
+                </div>
+              </div>
               <div className="field-grid profile-measures">
+                <label className="field-label-custom">年龄<AdaptiveInput inputMode="numeric" value={profileDraft.age} onChange={(event) => setProfileDraft({ ...profileDraft, age: event.target.value })} /></label>
                 <label className="field-label-custom">身高 cm<AdaptiveInput inputMode="decimal" value={profileDraft.height} onChange={(event) => setProfileDraft({ ...profileDraft, height: event.target.value })} /></label>
                 <label className="field-label-custom">体重 kg<AdaptiveInput inputMode="decimal" value={profileDraft.weight} onChange={(event) => setProfileDraft({ ...profileDraft, weight: event.target.value })} /></label>
                 <label className="field-label-custom">腰围 cm<AdaptiveInput inputMode="decimal" value={profileDraft.waist} onChange={(event) => setProfileDraft({ ...profileDraft, waist: event.target.value })} /></label>
@@ -1155,8 +1268,44 @@ export default function Prototype() {
               </div>
             </section>
             <section className="surface form-surface">
+              <div className="section-heading compact"><div><p className="section-kicker">用于估算每日消耗</p><h2>训练与休息</h2></div></div>
+              <label className="field-label-custom">训练强度</label>
+              <div className="choice-row">
+                {([[
+                  "light", "轻"
+                ], ["moderate", "中"], ["hard", "高"]] as [TrainingIntensity, string][]).map(([value, label]) => (
+                  <button key={value} aria-pressed={profileDraft.trainingIntensity === value} className={profileDraft.trainingIntensity === value ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, trainingIntensity: value })}>{label}</button>
+                ))}
+              </div>
+              <div className="training-setting">
+                <span><strong>力量训练</strong><small>每个训练日</small></span>
+                <div className="duration-options">
+                  {[0, 30, 45, 60].map((minutes) => <button key={minutes} aria-pressed={profileDraft.strengthMinutes === minutes} className={profileDraft.strengthMinutes === minutes ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, strengthMinutes: minutes })}>{minutes ? `${minutes} 分` : "无"}</button>)}
+                </div>
+              </div>
+              <div className="training-setting">
+                <span><strong>有氧训练</strong><small>视频建议约 30–40 分钟</small></span>
+                <div className="duration-options">
+                  {[0, 20, 30, 40].map((minutes) => <button key={minutes} aria-pressed={profileDraft.cardioMinutes === minutes} className={profileDraft.cardioMinutes === minutes ? "selected" : ""} onClick={() => setProfileDraft({ ...profileDraft, cardioMinutes: minutes })}>{minutes ? `${minutes} 分` : "无"}</button>)}
+                </div>
+              </div>
+              <div className="training-setting schedule-setting">
+                <span><strong>练休节奏</strong><small>按计划开始日循环</small></span>
+                <div className="schedule-controls">
+                  <label>练<select value={profileDraft.trainingDays} onChange={(event) => setProfileDraft({ ...profileDraft, trainingDays: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6].map((days) => <option key={days} value={days}>{days}</option>)}</select>天</label>
+                  <label>休<select value={profileDraft.restDays} onChange={(event) => setProfileDraft({ ...profileDraft, restDays: Number(event.target.value) })}>{[1, 2, 3].map((days) => <option key={days} value={days}>{days}</option>)}</select>天</label>
+                </div>
+              </div>
+              <div className="estimate-grid">
+                <div><span>训练日</span><strong>{draftExpenditure.trainingDay}<small> kcal</small></strong></div>
+                <div><span>休息日</span><strong>{draftExpenditure.restDay}<small> kcal</small></strong></div>
+                <div><span>周期日均</span><strong>{draftExpenditure.averageDay}<small> kcal</small></strong></div>
+              </div>
+              <p className="profile-weight-note">静态消耗采用 Mifflin–St Jeor 静息能量 × 1.2；运动用训练时长和强度估算，仅作趋势参考。</p>
+            </section>
+            <section className="surface form-surface">
               <div className="section-heading compact"><div><p className="section-kicker">每公斤体重</p><h2>当前营养系数</h2></div></div>
-              <p className="profile-weight-note">有状态记录时，营养目标优先按最近一次体重计算。</p>
+              <p className="profile-weight-note">目标克数 = 体重 × 系数；按当前填写值折算摄入约 {draftTargetCalories} kcal（碳水/蛋白质每克 4 kcal，脂肪每克 9 kcal）。</p>
               {([
                 ["carbMultiplier", "碳水", "2.5–3.5g 起步"],
                 ["proteinMultiplier", "蛋白质", "通常 1.2–2.0g"],
