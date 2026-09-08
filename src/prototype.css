@@ -162,6 +162,11 @@ button {
   font-weight: 600;
 }
 
+.meal-photo-actions {
+  display: grid;
+  gap: 10px;
+}
+
 .camera-hero {
   position: relative;
   display: flex;
@@ -180,6 +185,55 @@ button {
 
 .camera-hero:active {
   transform: scale(.988);
+}
+
+.gallery-upload {
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 15px;
+  border: 1px solid rgba(94, 169, 58, .28);
+  border-radius: 18px;
+  color: var(--green-dark);
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 7px 20px rgba(58, 105, 36, .08);
+  text-align: left;
+}
+
+.gallery-upload > svg:first-child {
+  width: 22px;
+  height: 22px;
+  padding: 8px;
+  border-radius: 12px;
+  box-sizing: content-box;
+  background: var(--green-soft);
+}
+
+.gallery-upload > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gallery-upload strong {
+  font-size: 14px;
+}
+
+.gallery-upload small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gallery-upload > svg:last-child {
+  color: var(--muted);
+}
+
+.gallery-upload:active {
+  transform: scale(.992);
+  background: var(--green-soft);
 }
 
 .camera-icon-wrap {

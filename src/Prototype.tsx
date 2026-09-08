@@ -7,6 +7,7 @@ import {
   ChevronRightIcon,
   Cross2Icon,
   HomeIcon,
+  ImageIcon,
   InfoCircledIcon,
   MinusIcon,
   PersonIcon,
@@ -628,7 +629,8 @@ export default function Prototype() {
   const [mealSaving, setMealSaving] = useState(false);
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
   const mealSavingRef = useRef(false);
   const analysisRequestRef = useRef(0);
   const [mealDraft, setMealDraft] = useState<MealDraft>({
@@ -1096,22 +1098,37 @@ export default function Prototype() {
             </header>
 
             <input
-              ref={fileRef}
+              ref={cameraRef}
               className="visually-hidden"
               type="file"
               accept="image/*"
               capture="environment"
               onChange={handlePhoto}
-              aria-label="选择或拍摄餐食照片"
+              aria-label="拍摄餐食照片"
             />
-            <button className="camera-hero" onClick={() => fileRef.current?.click()} data-testid="photo-meal-button">
-              <span className="camera-icon-wrap"><CameraIcon /></span>
-              <span className="camera-copy">
-                <strong>拍照记一餐</strong>
-                <small>上传照片后确认食物、份量与营养</small>
-              </span>
-              <PlusIcon className="camera-plus" />
-            </button>
+            <input
+              ref={galleryRef}
+              className="visually-hidden"
+              type="file"
+              accept="image/*"
+              onChange={handlePhoto}
+              aria-label="从相册选择餐食照片"
+            />
+            <div className="meal-photo-actions">
+              <button className="camera-hero" onClick={() => cameraRef.current?.click()} data-testid="photo-meal-button">
+                <span className="camera-icon-wrap"><CameraIcon /></span>
+                <span className="camera-copy">
+                  <strong>拍照记一餐</strong>
+                  <small>拍下这餐，AI 自动估算营养</small>
+                </span>
+                <PlusIcon className="camera-plus" />
+              </button>
+              <button className="gallery-upload" onClick={() => galleryRef.current?.click()}>
+                <ImageIcon />
+                <span><strong>照片识别</strong><small>从手机相册选择</small></span>
+                <ChevronRightIcon />
+              </button>
+            </div>
 
             <section className="surface macro-surface" aria-labelledby="macro-title">
               <div className="section-heading">
@@ -1187,7 +1204,7 @@ export default function Prototype() {
                   </div>
                 </div>
               ) : (
-                <button className="empty-meal" onClick={() => fileRef.current?.click()}>
+                <button className="empty-meal" onClick={() => cameraRef.current?.click()}>
                   <CameraIcon />
                   <span><strong>还没有饮食记录</strong><small>拍下第一餐开始记录</small></span>
                 </button>

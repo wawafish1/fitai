@@ -45,7 +45,7 @@ async function analyzeMeal(request, env) {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: env.AI_MODEL || "gpt-5.6-luna:stable",
+      model: env.AI_MODEL || "gpt-5.6-terra:stable",
       stream: false,
       max_tokens: 900,
       response_format: { type: "json_object" },
