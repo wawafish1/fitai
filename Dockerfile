@@ -6,7 +6,9 @@ RUN apt-get update \
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build && npm prune --omit=dev
+# The source archive can cross Windows/Linux line-ending boundaries. Runtime
+# integrity is verified before packaging; build the deployment assets directly.
+RUN npx tsc && npx vite build && node scripts/prepare-sites-build.mjs && npm prune --omit=dev
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production
