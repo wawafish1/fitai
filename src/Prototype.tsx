@@ -1754,7 +1754,6 @@ export default function Prototype() {
 
       <BottomSheet open={Boolean(viewedMeal)} onOpenChange={(open) => { if (!open) setViewedMealId(null); }} title="餐食详情" description={viewedMeal ? `${viewedMeal.date} · ${viewedMeal.label} ${viewedMeal.time} · 仅供查看` : "查看已保存的餐食"} snap={0.9}>
         {viewedMeal && <div className="sheet-form meal-detail">
-          <button className="sheet-cancel" onClick={() => setViewedMealId(null)}><Cross2Icon />关闭</button>
           {photoUrls[viewedMeal.id] || viewedMeal.isDemo ? <img className="meal-detail-photo" src={photoUrls[viewedMeal.id] || "/assets/meal-lunch.png"} alt={`${viewedMeal.label}餐食照片`} draggable={false} /> : <div className="meal-detail-no-photo"><CameraIcon /><span>照片暂不可用，餐食信息仍可查看。</span></div>}
           {viewedMeal.isDemo && <p className="section-kicker">示例餐食</p>}
           <div className="meal-detail-foods"><h3>食物与份量</h3><p>{viewedMeal.foods}</p></div>
@@ -1781,11 +1780,6 @@ export default function Prototype() {
         setMealOpen(open);
       }} title="确认这一餐" description="逐项核对食物和食用量，修改后自动汇总。" snap={0.9}>
         <div className="sheet-form meal-sheet">
-          <button className="sheet-cancel" onClick={() => {
-            analysisRequestRef.current += 1;
-            if (keyboard.visible) keyboard.hide();
-            setMealOpen(false);
-          }}><Cross2Icon />取消</button>
           {mealDraft.previewUrl && <img className={`meal-preview ${mealDraft.source === "label" ? "nutrition-label-preview" : ""}`} src={mealDraft.previewUrl} alt={mealDraft.source === "label" ? "待核对营养表" : "待记录餐食"} draggable={false} />}
           <div className={`analysis-status ${analysisMode}`}>
             {analysisMode === "analyzing" && <><ReloadIcon className="spin" />正在高清识别食物或营养表…</>}
