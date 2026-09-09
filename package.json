@@ -1,12 +1,15 @@
 {
-  "name": "app",
+  "name": "fitai",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "check:runtime": "node scripts/check-mobile-runtime.mjs",
     "update:runtime-lock": "node scripts/update-mobile-runtime-lock.mjs",
+    "test": "npm run test:nutrition && npm run test:server && npm run test:sites && npm run test:runtime",
+    "test:nutrition": "node --test tests/nutrition.spec.mjs",
     "test:runtime": "playwright test",
+    "test:server": "node --test tests/server-photo.spec.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "npm run check:runtime",
     "dev": "vite",

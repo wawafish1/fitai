@@ -33,6 +33,17 @@ if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PRO
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
+app.use((_req, res, next) => {
+  res.set({
+    "content-security-policy": "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'",
+    "permissions-policy": "camera=(self), geolocation=(), microphone=()",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+  });
+  if (production) res.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+  next();
+});
 
 const db = new Database(path.join(dataDir, "fitai.sqlite"));
 db.pragma("journal_mode = WAL");
@@ -89,6 +100,13 @@ db.exec(`
   );
 `);
 db.pragma("optimize");
+
+function cleanupExpiredRecords() {
+  const now = nowSeconds();
+  db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
+  db.prepare("DELETE FROM login_codes WHERE requested_at < ?").run(now - 86400);
+  db.prepare("DELETE FROM auth_request_log WHERE requested_at < ?").run(now - 86400);
+}
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const codeHash = (email, code) => crypto.createHmac("sha256", sessionSecret).update(`${email}:${code}`).digest("hex");
@@ -322,7 +340,13 @@ app.get("/api/photos/:id", requireUser, (req, res) => {
   const id = safePhotoId(req.params.id);
   const record = id && db.prepare("SELECT file_name, mime_type FROM photos WHERE user_id = ? AND id = ?").get(req.user.id, id);
   if (!record) return res.status(404).json({ error: "photo_not_found" });
-  res.type(record.mime_type).sendFile(path.join(photoDir, record.file_name));
+  fs.readFile(path.join(photoDir, record.file_name), (error, contents) => {
+    if (error) {
+      if (error.code !== "ENOENT") console.error("Photo read failed", error?.message || error);
+      return res.status(404).json({ error: "photo_not_found" });
+    }
+    res.type(record.mime_type).send(contents);
+  });
 });
 
 function imageDataUrl(file) {
@@ -382,10 +406,19 @@ app.post("/api/analyze-meal", requireUser, upload.single("image"), async (req, r
 });
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({ error: "image_too_large", maxBytes: maxImageBytes });
+  }
+  if (req.path.startsWith("/api/")) {
+    console.error("API request failed", error?.message || error);
+    return res.status(500).json({ error: "internal_error" });
+  }
+  next(error);
+});
 app.use(express.static(publicDir, { index: false, maxAge: production ? "1h" : 0 }));
 app.use((_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
-db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(nowSeconds());
-db.prepare("DELETE FROM login_codes WHERE requested_at < ?").run(nowSeconds() - 86400);
-db.prepare("DELETE FROM auth_request_log WHERE requested_at < ?").run(nowSeconds() - 86400);
+cleanupExpiredRecords();
+setInterval(cleanupExpiredRecords, 6 * 60 * 60 * 1000).unref();
 app.listen(port, "0.0.0.0", () => console.log(`FitAI listening on ${port}`));

@@ -5,6 +5,12 @@ services:
     env_file: .env
     volumes:
       - fitai_data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - web
       - shared_proxy
@@ -13,7 +19,7 @@ networks:
   web:
   shared_proxy:
     external: true
-    name: writing-assistant-proxy
+    name: ${SHARED_PROXY_NETWORK:-writing-assistant-proxy}
 
 volumes:
   fitai_data:
