@@ -1209,16 +1209,21 @@ button {
 }
 
 .sheet-cancel {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: inline-flex;
-  align-self: flex-end;
+  align-self: stretch;
+  flex-shrink: 0;
   min-height: 44px;
   align-items: center;
+  justify-content: flex-end;
   gap: 5px;
-  margin-top: -8px;
+  margin-top: 0;
   padding: 0 8px;
   border: 0;
   color: var(--muted);
-  background: transparent;
+  background: #fff;
   font-size: 12px;
   font-weight: 600;
 }
@@ -1769,6 +1774,26 @@ button {
 /* On an actual phone, use the whole browser viewport instead of shrinking the
    desktop preview device around the app. */
 @media (max-width: 600px) {
+  /* The preview runtime measures sheets against a fixed device geometry.
+     Native browsers have a smaller, changing viewport (Safari toolbars).
+     Cap app sheets inside the real screen; do not alter the preview runtime. */
+  .bottom-sheet:has(.sheet-form, .review-sheet) {
+    bottom: 0 !important;
+    min-height: 0;
+    max-height: calc(100% - max(12px, env(safe-area-inset-top, 0px))) !important;
+  }
+
+  .bottom-sheet:has(.sheet-form, .review-sheet) > .sheet-handle-zone,
+  .bottom-sheet:has(.sheet-form, .review-sheet) > .sheet-header {
+    flex-shrink: 0;
+  }
+
+  .bottom-sheet:has(.sheet-form, .review-sheet) > .sheet-content {
+    min-height: 0;
+    overscroll-behavior-y: contain;
+    padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  }
+
   .phone-stage {
     display: block;
     width: 100vw;
