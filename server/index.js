@@ -97,7 +97,6 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 const beijingDay = () => new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
 }).format(new Date());
-const beijingDayStartSeconds = () => Math.floor(Date.parse(`${beijingDay()}T00:00:00+08:00`) / 1000);
 
 function sameOriginOnly(req, res, next) {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
@@ -213,11 +212,6 @@ app.post("/api/auth/request-code", async (req, res) => {
     .get(email, now - 3600).count;
   if (recentEmailRequests >= 5) {
     return res.status(429).json({ error: "email_hourly_limit", retryAfter: 3600 });
-  }
-  const todayEmailRequests = db.prepare("SELECT COUNT(*) AS count FROM login_codes WHERE email = ? AND requested_at >= ?")
-    .get(email, beijingDayStartSeconds()).count;
-  if (todayEmailRequests >= 10) {
-    return res.status(429).json({ error: "email_daily_limit" });
   }
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
   db.prepare("INSERT INTO auth_request_log (ip_hash, requested_at) VALUES (?, ?)").run(ipHash, now);

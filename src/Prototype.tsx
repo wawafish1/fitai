@@ -1180,9 +1180,7 @@ export default function Prototype() {
       setCodeSent(true);
     } catch (error) {
       const requestError = error as Error & { status?: number; code?: string };
-      if (requestError.code === "email_daily_limit") {
-        setAuthError("今天验证码发送次数已达上限，请明天再试。");
-      } else if (requestError.code === "email_hourly_limit" || requestError.code === "ip_hourly_limit") {
+      if (requestError.code === "email_hourly_limit" || requestError.code === "ip_hourly_limit") {
         setAuthError("这一小时验证码发送次数已达上限，请稍后再试。");
       } else if (requestError.status === 429) {
         setAuthError("验证码发送得太频繁，请一分钟后再试。");
