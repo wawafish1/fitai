@@ -210,7 +210,7 @@ app.post("/api/auth/request-code", async (req, res) => {
   }
   const recentEmailRequests = db.prepare("SELECT COUNT(*) AS count FROM login_codes WHERE email = ? AND requested_at > ?")
     .get(email, now - 3600).count;
-  if (recentEmailRequests >= 5) {
+  if (recentEmailRequests >= 10) {
     return res.status(429).json({ error: "email_hourly_limit", retryAfter: 3600 });
   }
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
