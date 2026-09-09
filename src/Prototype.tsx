@@ -1,4 +1,4 @@
-import { type ChangeEvent, type InputHTMLAttributes, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type InputHTMLAttributes, type TextareaHTMLAttributes, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -17,11 +17,13 @@ import {
   PersonIcon,
   PlusIcon,
   ReloadIcon,
+  Pencil1Icon,
+  TrashIcon,
 } from "@radix-ui/react-icons";
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import { GenderFemale, GenderMale } from "@phosphor-icons/react";
 import "react-circular-progressbar/dist/styles.css";
-import { BottomSheet, KeyboardInput, MobileScroll, useKeyboard } from "./mobile";
+import { BottomSheet, KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
 
 type Tab = "today" | "trends" | "profile";
 type BodyType = "easy-gain" | "balanced" | "easy-lean";
@@ -151,7 +153,7 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-function AdaptiveInput(props: InputHTMLAttributes<HTMLInputElement>) {
+function useNativeKeyboard() {
   const [usesNativeKeyboard, setUsesNativeKeyboard] = useState(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 600px)").matches,
   );
@@ -164,7 +166,36 @@ function AdaptiveInput(props: InputHTMLAttributes<HTMLInputElement>) {
     return () => media.removeEventListener("change", syncMode);
   }, []);
 
-  return usesNativeKeyboard ? <input {...props} /> : <KeyboardInput {...props} />;
+  return usesNativeKeyboard;
+}
+
+function AdaptiveInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  return useNativeKeyboard() ? <input {...props} /> : <KeyboardInput {...props} />;
+}
+
+function AdaptiveTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const usesNativeKeyboard = useNativeKeyboard();
+  const keyboard = useKeyboard();
+  const containerRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const resize = () => {
+      const field = containerRef.current?.querySelector("textarea");
+      if (!field) return;
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight + 2}px`;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [props.value, usesNativeKeyboard]);
+  const fieldProps: TextareaHTMLAttributes<HTMLTextAreaElement> = {
+    ...props,
+    onBlur: (event) => {
+      if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.matches("input, textarea"))) keyboard.hide();
+      props.onBlur?.(event);
+    },
+  };
+  return <div ref={containerRef} className="adaptive-textarea">{usesNativeKeyboard ? <textarea {...fieldProps} /> : <KeyboardTextarea {...fieldProps} />}</div>;
 }
 
 const round = (value: number) => Math.round(value);
@@ -657,6 +688,9 @@ export default function Prototype() {
   const [tab, setTab] = useState<Tab>("today");
   const [mealOpen, setMealOpen] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
+  const [viewedMealId, setViewedMealId] = useState<string | null>(null);
+  const [editingCheckIn, setEditingCheckIn] = useState<CheckIn | null>(null);
+  const [confirmCheckInDelete, setConfirmCheckInDelete] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [mealError, setMealError] = useState("");
@@ -816,7 +850,7 @@ export default function Prototype() {
   const stageDay = dayDiff(data.profile.stageStart) + 1;
   const daysUntilReview = Math.max(0, data.profile.reviewDays - stageDay);
   const advice = getAdvice(stageCheckIns);
-  const recentMeal = todayMeals.at(-1) || data.meals.at(-1);
+  const viewedMeal = data.meals.find((meal) => meal.id === viewedMealId);
   const missingStageCheckIns = Math.max(0, 7 - stageCheckIns.length);
   const canReview = daysUntilReview === 0 && missingStageCheckIns === 0;
   const stageWeightChange = stageFirstCheckIn && stageLatestCheckIn ? stageLatestCheckIn.weight - stageFirstCheckIn.weight : 0;
@@ -988,8 +1022,11 @@ export default function Prototype() {
     setMealSaving(false);
   };
 
-  const openCheckInForm = () => {
-    const source = stageCheckIns.find((item) => item.date === today) || latestCheckIn;
+  const openCheckInForm = (entry: CheckIn | null = null) => {
+    keyboard.hide();
+    setEditingCheckIn(entry);
+    setConfirmCheckInDelete(false);
+    const source = entry || stageCheckIns.find((item) => item.date === today) || latestCheckIn;
     setCheckInDraft({
       weight: String(source?.weight ?? data.profile.weight),
       waist: String(source?.waist ?? data.profile.waist),
@@ -1006,6 +1043,30 @@ export default function Prototype() {
   const saveCheckIn = () => {
     if (!checkInDraftValid) {
       setCheckInError("请检查体重和腰围：体重 30–300kg，腰围 40–200cm。");
+      return;
+    }
+    if (editingCheckIn) {
+      const matches = (item: CheckIn) => item.date === editingCheckIn.date && item.stageId === editingCheckIn.stageId;
+      if (!data.checkIns.some(matches)) {
+        setCheckInError("这条记录已不存在，请关闭后重新选择。");
+        return;
+      }
+      setData((current) => ({
+        ...current,
+        checkIns: current.checkIns.map((item) => matches(item) ? {
+          ...item,
+          weight: Number(checkInDraft.weight),
+          waist: Number(checkInDraft.waist),
+          hunger: checkInDraft.hunger,
+          craving: checkInDraft.craving,
+          energy: checkInDraft.energy,
+          training: checkInDraft.training,
+          sleep: checkInDraft.sleep,
+        } : item),
+      }));
+      keyboard.hide();
+      setCheckInError("");
+      setCheckInOpen(false);
       return;
     }
     const firstRealEntry = data.demoMode;
@@ -1054,6 +1115,18 @@ export default function Prototype() {
       }));
     }
     if (keyboard.visible) keyboard.hide();
+    setCheckInError("");
+    setCheckInOpen(false);
+  };
+
+  const deleteCheckIn = () => {
+    if (!editingCheckIn || !confirmCheckInDelete) return;
+    setData((current) => ({
+      ...current,
+      checkIns: current.checkIns.filter((item) => item.date !== editingCheckIn.date || item.stageId !== editingCheckIn.stageId),
+    }));
+    keyboard.hide();
+    setConfirmCheckInDelete(false);
     setCheckInError("");
     setCheckInOpen(false);
   };
@@ -1439,16 +1512,16 @@ export default function Prototype() {
               <div className="section-heading compact">
                 <div>
                   <p className="section-kicker">今日已记录 {todayMeals.length} 餐</p>
-                  <h2 id="recent-title">{todayMeals.length ? "最近一餐" : "最近记录"}</h2>
+                  <h2 id="recent-title">今日餐饮记录</h2>
                 </div>
-                <button className="text-button" onClick={openCheckInForm}>记录体重</button>
+                <button className="text-button" onClick={() => openCheckInForm()}>记录体重</button>
               </div>
-              {recentMeal ? (
-                <div className="meal-row">
-                  {photoUrls[recentMeal.id] || recentMeal.isDemo ? (
+              {todayMeals.length ? (
+                <div className="today-meal-list">{todayMeals.map((meal) => <button type="button" className="meal-row meal-record-button" key={meal.id} onClick={() => { keyboard.hide(); setViewedMealId(meal.id); }} aria-label={`查看${meal.label} ${meal.time}的餐食详情`}>
+                  {photoUrls[meal.id] || meal.isDemo ? (
                     <img
-                      src={photoUrls[recentMeal.id] || "/assets/meal-lunch.png"}
-                      alt={`${recentMeal.foods}餐食照片`}
+                      src={photoUrls[meal.id] || "/assets/meal-lunch.png"}
+                      alt=""
                       draggable={false}
                     />
                   ) : (
@@ -1456,17 +1529,18 @@ export default function Prototype() {
                   )}
                   <div className="meal-copy">
                     <div className="meal-title-line">
-                      <strong>{recentMeal.label} · {recentMeal.date === today ? recentMeal.time : formatShortDate(recentMeal.date)}</strong>
-                      {recentMeal.isDemo && <span className="demo-badge">示例</span>}
+                      <strong>{meal.label} · {meal.time}</strong>
+                      {meal.isDemo && <span className="demo-badge">示例</span>}
                     </div>
-                    <p>{recentMeal.foods}</p>
-                    <span>{recentMeal.calories} kcal · 碳 {recentMeal.carbs} / 蛋 {recentMeal.protein} / 脂 {recentMeal.fat}g</span>
+                    <p>{meal.foods}</p>
+                    <span>{meal.calories} kcal · 点击查看详情</span>
                   </div>
-                </div>
+                  <ChevronRightIcon className="meal-record-chevron" aria-hidden="true" />
+                </button>)}</div>
               ) : (
                 <button className="empty-meal" onClick={() => cameraRef.current?.click()}>
                   <CameraIcon />
-                  <span><strong>还没有饮食记录</strong><small>拍下第一餐开始记录</small></span>
+                  <span><strong>今天还没有饮食记录</strong><small>拍下第一餐开始记录</small></span>
                 </button>
               )}
             </section>
@@ -1488,14 +1562,15 @@ export default function Prototype() {
             <section className="surface log-surface">
               <div className="section-heading">
                 <div><p className="section-kicker">本阶段 {stageCheckIns.length} 次</p><h2>每日状态</h2></div>
-                <button className="icon-button" onClick={openCheckInForm} aria-label="新增状态记录"><PlusIcon /></button>
+                <button className="icon-button" onClick={() => openCheckInForm()} aria-label="新增状态记录"><PlusIcon /></button>
               </div>
               <div className="checkin-list">
-                {[...stageCheckIns].slice(-7).reverse().map((item) => (
-                  <div className="checkin-row" key={item.date}>
+                {[...stageCheckIns].reverse().map((item) => (
+                  <div className="checkin-row" key={`${item.stageId}:${item.date}`}>
                     <span className="checkin-date">{formatShortDate(item.date)}</span>
                     <div><strong>{item.weight.toFixed(1)} kg</strong><small>腰围 {item.waist.toFixed(1)} cm</small></div>
                     <div className="state-score"><strong>{scoreLabel(round((item.energy + item.training + item.sleep) / 3))}</strong><small>综合状态</small></div>
+                    <button className="icon-button checkin-edit-button" aria-label={`编辑 ${item.date} 的每日状态`} onClick={() => openCheckInForm(item)}><Pencil1Icon aria-hidden="true" /></button>
                   </div>
                 ))}
                 {!stageCheckIns.length && <p className="empty-state-copy">还没有本阶段状态记录，先从今天的体重和感受开始。</p>}
@@ -1665,6 +1740,23 @@ export default function Prototype() {
         ))}
       </nav>
 
+      <BottomSheet open={Boolean(viewedMeal)} onOpenChange={(open) => { if (!open) setViewedMealId(null); }} title="餐食详情" description={viewedMeal ? `${viewedMeal.date} · ${viewedMeal.label} ${viewedMeal.time} · 仅供查看` : "查看已保存的餐食"} snap={0.9}>
+        {viewedMeal && <div className="sheet-form meal-detail">
+          <button className="sheet-cancel" onClick={() => setViewedMealId(null)}><Cross2Icon />关闭</button>
+          {photoUrls[viewedMeal.id] || viewedMeal.isDemo ? <img className="meal-detail-photo" src={photoUrls[viewedMeal.id] || "/assets/meal-lunch.png"} alt={`${viewedMeal.label}餐食照片`} draggable={false} /> : <div className="meal-detail-no-photo"><CameraIcon /><span>照片暂不可用，餐食信息仍可查看。</span></div>}
+          {viewedMeal.isDemo && <p className="section-kicker">示例餐食</p>}
+          <div className="meal-detail-foods"><h3>食物与份量</h3><p>{viewedMeal.foods}</p></div>
+          <dl className="meal-detail-macros">
+            <div><dt>热量</dt><dd>{viewedMeal.calories}<small> kcal</small></dd></div>
+            <div><dt>碳水</dt><dd>{viewedMeal.carbs}<small> g</small></dd></div>
+            <div><dt>蛋白质</dt><dd>{viewedMeal.protein}<small> g</small></dd></div>
+            <div><dt>脂肪</dt><dd>{viewedMeal.fat}<small> g</small></dd></div>
+          </dl>
+          <p className="meal-detail-note">以上为保存时确认的估算值，本页不支持修改。</p>
+          <button className="primary-button" onClick={() => setViewedMealId(null)}>关闭详情</button>
+        </div>}
+      </BottomSheet>
+
       <BottomSheet open={mealOpen} onOpenChange={(open) => {
         if (!open) {
           analysisRequestRef.current += 1;
@@ -1687,7 +1779,7 @@ export default function Prototype() {
           <div className="choice-row meal-type-row">
             {["早餐", "午餐", "晚餐", "加餐"].map((label) => <button key={label} aria-pressed={mealDraft.label === label} className={mealDraft.label === label ? "selected" : ""} onClick={() => editMealDraft({ label })}>{label}</button>)}
           </div>
-          <label className="field-label-custom">识别到的食物<AdaptiveInput placeholder="例如：米饭、鸡胸肉、西兰花" value={mealDraft.foods} onChange={(event) => editMealDraft({ foods: event.target.value })} /></label>
+          <label className="field-label-custom">识别到的食物<AdaptiveTextarea rows={4} placeholder="例如：米饭约 200 克、鸡胸肉约 150 克、西兰花约 100 克" value={mealDraft.foods} onChange={(event) => editMealDraft({ foods: event.target.value })} /></label>
           <div className="macro-input-grid">
             {([
               ["carbs", "碳水"],
@@ -1703,7 +1795,7 @@ export default function Prototype() {
         </div>
       </BottomSheet>
 
-      <BottomSheet open={checkInOpen} onOpenChange={(open) => { if (!open && keyboard.visible) keyboard.hide(); setCheckInOpen(open); }} title="记录今日状态" description="谭成义的方法强调跟着身体状态走，不只看体重。" snap={0.92}>
+      <BottomSheet open={checkInOpen} onOpenChange={(open) => { if (!open) { keyboard.hide(); setConfirmCheckInDelete(false); } setCheckInOpen(open); }} title={editingCheckIn ? "修改每日状态" : "记录今日状态"} description={editingCheckIn ? `${editingCheckIn.date} · 修改后保留原日期与所属阶段` : "跟着身体状态走，不只看体重。"} snap={0.92}>
         <div className="sheet-form">
           <button className="sheet-cancel" onClick={() => { if (keyboard.visible) keyboard.hide(); setCheckInOpen(false); }}><Cross2Icon />取消</button>
           <div className="field-grid">
@@ -1724,7 +1816,15 @@ export default function Prototype() {
           ))}
           {checkInError && <p className="form-error" role="alert">{checkInError}</p>}
           {keyboard.visible && <button className="sheet-keyboard-dismiss" onClick={keyboard.hide}>完成填写</button>}
-          <button className="primary-button" onClick={saveCheckIn} disabled={!checkInDraftValid}>保存今日状态</button>
+          {!confirmCheckInDelete && <button className="primary-button" onClick={saveCheckIn} disabled={!checkInDraftValid}>{editingCheckIn ? "保存修改" : "保存今日状态"}</button>}
+          {editingCheckIn && (confirmCheckInDelete ? <div className="checkin-delete-confirm" role="group" aria-label="确认删除每日状态">
+            <strong>删除 {editingCheckIn.date} 的状态？</strong>
+            <p>这条记录将从账号中删除，体重、腰围和阶段统计会重新计算。删除后无法恢复。</p>
+            <div className="checkin-delete-actions">
+              <button className="secondary-button" onClick={() => setConfirmCheckInDelete(false)}>保留记录</button>
+              <button className="danger-button" onClick={deleteCheckIn}>确认删除</button>
+            </div>
+          </div> : <button className="delete-checkin-button" onClick={() => { keyboard.hide(); setConfirmCheckInDelete(true); }}><TrashIcon aria-hidden="true" />删除这条状态</button>)}
         </div>
       </BottomSheet>
 
