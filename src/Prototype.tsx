@@ -139,8 +139,9 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload.error || "request_failed") as Error & { status?: number };
+    const error = new Error(payload.error || "request_failed") as Error & { status?: number; code?: string };
     error.status = response.status;
+    error.code = payload.error;
     throw error;
   }
   return payload as T;
@@ -1178,8 +1179,16 @@ export default function Prototype() {
       setLoginEmail(email);
       setCodeSent(true);
     } catch (error) {
-      const status = (error as Error & { status?: number }).status;
-      setAuthError(status === 429 ? "验证码发送得太频繁，请一分钟后再试。" : "验证码发送失败，请稍后重试。");
+      const requestError = error as Error & { status?: number; code?: string };
+      if (requestError.code === "email_daily_limit") {
+        setAuthError("今天验证码发送次数已达上限，请明天再试。");
+      } else if (requestError.code === "email_hourly_limit" || requestError.code === "ip_hourly_limit") {
+        setAuthError("这一小时验证码发送次数已达上限，请稍后再试。");
+      } else if (requestError.status === 429) {
+        setAuthError("验证码发送得太频繁，请一分钟后再试。");
+      } else {
+        setAuthError("验证码发送失败，请稍后重试。");
+      }
     } finally {
       setAuthBusy(false);
     }
@@ -1224,6 +1233,7 @@ export default function Prototype() {
     try { await apiJson("/api/auth/logout", { method: "POST", body: "{}" }); } catch { /* session may already be gone */ }
     syncReadyRef.current = false;
     setAuthUser(null);
+    setTab("today");
     setCodeSent(false);
     setLoginCode("");
     const fresh = makeDefaultData();
@@ -1238,7 +1248,7 @@ export default function Prototype() {
   if (!authUser) {
     return (
       <div className="nutrition-app auth-shell">
-        <MobileScroll className="app-screen">
+        <MobileScroll key="auth-screen" className="app-screen">
           <main className="auth-screen" aria-label="邮箱登录">
             <div className="auth-brand"><span>轻</span><div><strong>轻盈计划</strong><small>三个月饮食与身体记录</small></div></div>
             <section className="auth-card">
@@ -1266,7 +1276,7 @@ export default function Prototype() {
 
   return (
     <div className="nutrition-app">
-      <MobileScroll className="app-screen">
+      <MobileScroll key="main-screen" className="app-screen">
         {tab === "today" && (
           <main className="screen-content today-screen" aria-label="今日饮食">
             <header className="today-header">

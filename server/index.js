@@ -97,6 +97,7 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 const beijingDay = () => new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
 }).format(new Date());
+const beijingDayStartSeconds = () => Math.floor(Date.parse(`${beijingDay()}T00:00:00+08:00`) / 1000);
 
 function sameOriginOnly(req, res, next) {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
@@ -203,10 +204,20 @@ app.post("/api/auth/request-code", async (req, res) => {
   const ipHash = hash(req.ip || req.socket.remoteAddress || "unknown");
   const recentIpRequests = db.prepare("SELECT COUNT(*) AS count FROM auth_request_log WHERE ip_hash = ? AND requested_at > ?")
     .get(ipHash, now - 3600).count;
-  if (recentIpRequests >= 20) return res.status(429).json({ error: "code_requested_too_often", retryAfter: 3600 });
+  if (recentIpRequests >= 20) return res.status(429).json({ error: "ip_hourly_limit", retryAfter: 3600 });
   const recent = db.prepare("SELECT requested_at FROM login_codes WHERE email = ? ORDER BY requested_at DESC LIMIT 1").get(email);
   if (recent && now - recent.requested_at < 60) {
     return res.status(429).json({ error: "code_requested_too_often", retryAfter: 60 - (now - recent.requested_at) });
+  }
+  const recentEmailRequests = db.prepare("SELECT COUNT(*) AS count FROM login_codes WHERE email = ? AND requested_at > ?")
+    .get(email, now - 3600).count;
+  if (recentEmailRequests >= 5) {
+    return res.status(429).json({ error: "email_hourly_limit", retryAfter: 3600 });
+  }
+  const todayEmailRequests = db.prepare("SELECT COUNT(*) AS count FROM login_codes WHERE email = ? AND requested_at >= ?")
+    .get(email, beijingDayStartSeconds()).count;
+  if (todayEmailRequests >= 10) {
+    return res.status(429).json({ error: "email_daily_limit" });
   }
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
   db.prepare("INSERT INTO auth_request_log (ip_hash, requested_at) VALUES (?, ?)").run(ipHash, now);
