@@ -12,6 +12,8 @@
 - Meal photos are analyzed through a same-origin server endpoint. Keep provider credentials server-only, prefill editable nutrition estimates, and require the user to confirm before saving.
 - Keep separate mobile actions for taking a new meal photo and choosing an existing photo from the gallery; both run the same AI analysis and confirmation flow.
 - Public deployment uses passwordless email verification through Tencent Cloud SES. Each account owns its plan, check-ins, meals, and photos; authenticated records sync to the server while browser storage remains a temporary local fallback.
+- The login screen uses a forest-green and lime editorial treatment with a compact FitAI wordmark, mobile-first form, and matching email/code steps. Retain native mobile inputs at 16px or larger, resend cooldown, Enter-to-submit, and distinct keyed login/app scroll containers. If future visual work needs generated images, the user prefers GPT IMAGE2.
+- Email login codes have a 60-second cooldown per email, a 10-request rolling hourly cap per email, and a 20-request rolling hourly cap per IP. There is no app-level daily email cap; the daily AI photo allowance is separate.
 - Limit AI meal-photo analysis to 10 successful requests per account per Beijing calendar day, with the current usage visible beside the photo actions.
 - Nutrition adjustments must reflect the referenced Tan Chengyi video logic: fat stays within 0.6–0.8 g/kg, protein is generally 1.2–2.0 g/kg, carbohydrate starts around 2.5–3.5 g/kg, and carbohydrate changes are driven by hunger/craving plus training and mental state rather than automatic daily cuts.
 

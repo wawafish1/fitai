@@ -1,14 +1,18 @@
 import { type ChangeEvent, type InputHTMLAttributes, useEffect, useRef, useState } from "react";
 import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
   BarChartIcon,
   CalendarIcon,
   CameraIcon,
   CheckCircledIcon,
   ChevronRightIcon,
   Cross2Icon,
+  EnvelopeClosedIcon,
   HomeIcon,
   ImageIcon,
   InfoCircledIcon,
+  LockClosedIcon,
   MinusIcon,
   PersonIcon,
   PlusIcon,
@@ -643,6 +647,11 @@ export default function Prototype() {
   const [codeSent, setCodeSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [resendAvailableAt, setResendAvailableAt] = useState(0);
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [resendEmail, setResendEmail] = useState("");
+  const emailIsCoolingDown = loginEmail.trim().toLowerCase() === resendEmail && resendSeconds > 0;
+  const authRequestRef = useRef(false);
   const [quota, setQuota] = useState<AnalysisQuota>({ used: 0, limit: 10 });
   const syncReadyRef = useRef(false);
   const [tab, setTab] = useState<Tab>("today");
@@ -680,6 +689,14 @@ export default function Prototype() {
     sleep: 4,
   });
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>(() => makeProfileDraft(data.profile));
+
+  useEffect(() => {
+    if (!resendAvailableAt) return;
+    const updateCountdown = () => setResendSeconds(Math.max(0, Math.ceil((resendAvailableAt - Date.now()) / 1000)));
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendAvailableAt]);
 
   useEffect(() => {
     try {
@@ -1168,16 +1185,23 @@ export default function Prototype() {
 
   const requestLoginCode = async () => {
     const email = loginEmail.trim().toLowerCase();
+    if (authRequestRef.current || (email === resendEmail && resendAvailableAt > Date.now())) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setAuthError("请输入正确的邮箱地址。");
       return;
     }
+    authRequestRef.current = true;
     setAuthBusy(true);
     setAuthError("");
     try {
       await apiJson("/api/auth/request-code", { method: "POST", body: JSON.stringify({ email }) });
+      keyboard.hide();
       setLoginEmail(email);
       setCodeSent(true);
+      setLoginCode("");
+      setResendSeconds(60);
+      setResendEmail(email);
+      setResendAvailableAt(Date.now() + 60_000);
     } catch (error) {
       const requestError = error as Error & { status?: number; code?: string };
       if (requestError.code === "email_hourly_limit" || requestError.code === "ip_hourly_limit") {
@@ -1188,15 +1212,18 @@ export default function Prototype() {
         setAuthError("验证码发送失败，请稍后重试。");
       }
     } finally {
+      authRequestRef.current = false;
       setAuthBusy(false);
     }
   };
 
   const verifyLoginCode = async () => {
+    if (authRequestRef.current) return;
     if (!/^\d{6}$/.test(loginCode.trim())) {
       setAuthError("请输入邮件中的 6 位验证码。");
       return;
     }
+    authRequestRef.current = true;
     setAuthBusy(true);
     setAuthError("");
     try {
@@ -1220,20 +1247,24 @@ export default function Prototype() {
       }
       window.localStorage.removeItem(STORAGE_KEY);
       syncReadyRef.current = true;
+      keyboard.hide();
     } catch {
       setAuthError("验证码不正确或已经过期，请重新获取。");
     } finally {
+      authRequestRef.current = false;
       setAuthBusy(false);
     }
   };
 
   const logout = async () => {
+    keyboard.hide();
     try { await apiJson("/api/auth/logout", { method: "POST", body: "{}" }); } catch { /* session may already be gone */ }
     syncReadyRef.current = false;
     setAuthUser(null);
     setTab("today");
     setCodeSent(false);
     setLoginCode("");
+    setAuthError("");
     const fresh = makeDefaultData();
     setData(fresh);
     setProfileDraft(makeProfileDraft(fresh.profile));
@@ -1246,26 +1277,59 @@ export default function Prototype() {
   if (!authUser) {
     return (
       <div className="nutrition-app auth-shell">
-        <MobileScroll key="auth-screen" className="app-screen">
-          <main className="auth-screen" aria-label="邮箱登录">
-            <div className="auth-brand"><span>轻</span><div><strong>轻盈计划</strong><small>三个月饮食与身体记录</small></div></div>
-            <section className="auth-card">
-              <p className="eyebrow">欢迎回来</p>
-              <h1>邮箱验证码登录</h1>
-              <p className="auth-description">首次验证会自动创建账号，记录会安全地保存在你的账号中。</p>
-              <label className="field-label-custom">邮箱地址
-                <AdaptiveInput type="email" inputMode="email" autoComplete="email" placeholder="name@example.com" value={loginEmail} disabled={codeSent} onChange={(event) => setLoginEmail(event.target.value)} />
-              </label>
-              {codeSent && <label className="field-label-custom">6 位验证码
-                <AdaptiveInput inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="请输入邮件验证码" value={loginCode} onChange={(event) => setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6))} />
-              </label>}
-              {authError && <p className="form-error" role="alert">{authError}</p>}
-              <button className="primary-button" disabled={authBusy} onClick={codeSent ? verifyLoginCode : requestLoginCode}>
-                {authBusy ? "请稍候…" : codeSent ? "验证并登录" : "获取验证码"}
-              </button>
-              {codeSent && <button className="secondary-button" disabled={authBusy} onClick={() => { setCodeSent(false); setLoginCode(""); setAuthError(""); }}>更换邮箱</button>}
-              <p className="auth-note">验证码 10 分钟内有效。无需设置或记住密码。</p>
+        <MobileScroll key="auth-screen" className="app-screen auth-page">
+          <main className={`auth-screen${codeSent ? " is-verifying" : ""}`} aria-label="邮箱登录">
+            <header className="auth-header">
+              <div className="auth-brand" aria-label="FitAI 轻盈计划">
+                <span className="auth-wordmark">fitai<span>.</span></span>
+                <span className="auth-brand-name">轻盈计划</span>
+              </div>
+              <span className="auth-header-note">让改变，慢慢发生</span>
+            </header>
+
+            <section className="auth-hero" aria-label="三个月饮食与身体记录">
+              <div className="auth-hero-topline"><span className="auth-plan-tag">90 天 · 循序渐进</span><ArrowRightIcon aria-hidden="true" /></div>
+              <h1>轻一点，<br /><span>更自在。</span></h1>
+              <p>好好吃饭，认真训练。<br />把每一点改变，记在这里。</p>
+              <div className="auth-hero-features">
+                <span><CameraIcon aria-hidden="true" />拍照记餐</span>
+                <span><BarChartIcon aria-hidden="true" />身体趋势</span>
+                <span><CalendarIcon aria-hidden="true" />阶段复盘</span>
+              </div>
             </section>
+
+            <section className="auth-card" aria-labelledby="auth-title">
+              <div className="auth-card-heading">
+                <div>
+                  <p className="auth-kicker">{codeSent ? "CHECK YOUR INBOX" : "YOUR JOURNEY STARTS HERE"}</p>
+                  <h2 id="auth-title">{codeSent ? "查收你的验证码" : "从今天，开始记录"}</h2>
+                </div>
+                <span className="auth-step" aria-label={`第 ${codeSent ? 2 : 1} 步，共 2 步`}><b>{codeSent ? "02" : "01"}</b><span>/ 02</span></span>
+              </div>
+              <p className="auth-description">{codeSent ? "验证码已发送，10 分钟内有效。" : "邮箱验证码登录，无需设置密码。"}</p>
+
+              <form className="auth-form" noValidate aria-busy={authBusy} onSubmit={(event) => { event.preventDefault(); void (codeSent ? verifyLoginCode() : requestLoginCode()); }}>
+                {codeSent ? <>
+                  <div className="auth-recipient"><EnvelopeClosedIcon aria-hidden="true" /><span>{loginEmail}</span></div>
+                  <label className="auth-field" htmlFor="login-code">6 位验证码
+                    <AdaptiveInput key="login-code" id="login-code" name="code" className="auth-code-input" inputMode="numeric" autoComplete="one-time-code" enterKeyHint="go" maxLength={6} placeholder="000000" value={loginCode} disabled={authBusy} aria-invalid={Boolean(authError)} aria-describedby={authError ? "auth-error" : undefined} onChange={(event) => { setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6)); setAuthError(""); }} />
+                  </label>
+                </> : <label className="auth-field" htmlFor="login-email">邮箱地址
+                  <span className="auth-input-wrap"><EnvelopeClosedIcon aria-hidden="true" /><AdaptiveInput key="login-email" id="login-email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} enterKeyHint="go" placeholder="输入你的邮箱地址" value={loginEmail} disabled={authBusy} aria-invalid={Boolean(authError)} aria-describedby={authError ? "auth-error" : undefined} onChange={(event) => { setLoginEmail(event.target.value); setAuthError(""); }} /></span>
+                </label>}
+                {authError && <p id="auth-error" className="form-error" role="alert">{authError}</p>}
+                <button type="submit" className="auth-submit" disabled={authBusy || (!codeSent && emailIsCoolingDown)}>
+                  <span>{authBusy ? (codeSent ? "正在验证…" : "正在发送…") : codeSent ? "验证并登录" : emailIsCoolingDown ? `${resendSeconds} 秒后可再次发送` : "获取验证码"}</span>
+                  <span className="auth-submit-icon">{authBusy ? <ReloadIcon className="spin" aria-hidden="true" /> : <ArrowRightIcon aria-hidden="true" />}</span>
+                </button>
+                {codeSent && <div className="auth-code-actions">
+                  <button type="button" disabled={authBusy} onClick={() => { keyboard.hide(); setCodeSent(false); setLoginCode(""); setAuthError(""); }}><ArrowLeftIcon aria-hidden="true" />更换邮箱</button>
+                  <button type="button" disabled={authBusy || resendSeconds > 0} onClick={() => void requestLoginCode()}>{resendSeconds > 0 ? `${resendSeconds} 秒后重新发送` : "重新发送验证码"}</button>
+                </div>}
+              </form>
+              <p className="auth-note"><LockClosedIcon aria-hidden="true" />{codeSent ? "未收到邮件？也可以看看垃圾邮件。" : "首次验证自动注册，记录随账号保存。"}</p>
+            </section>
+            <footer className="auth-footer"><span>饮食有记录，改变有迹可循。</span><span>FITAI · 轻盈计划</span></footer>
           </main>
         </MobileScroll>
       </div>
