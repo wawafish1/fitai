@@ -159,6 +159,7 @@ async function sendLoginCode(email, code) {
   const body = JSON.stringify({
     FromEmailAddress: process.env.TENCENT_SES_FROM,
     Destination: [email],
+    Subject: process.env.TENCENT_SES_SUBJECT || "轻盈计划登录验证码",
     Template: {
       TemplateID: Number(process.env.TENCENT_SES_TEMPLATE_ID),
       TemplateData: JSON.stringify({ code }),
