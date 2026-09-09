@@ -537,6 +537,33 @@ button {
 .meal-detail-macros dd { margin: 5px 0 0; font-size: 24px; font-weight: 700; }
 .meal-detail-macros small { font-size: 13px; font-weight: 400; }
 .meal-detail-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.meal-confirm-fields { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 0; margin: 0; border: 0; }
+.food-item-list { display: grid; gap: 16px; }
+.food-item-card { min-width: 0; display: grid; gap: 12px; padding: 16px; background: #f8faf5; border: 1px solid #e3e9dc; border-radius: 18px; }
+.food-item-heading { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #667b5b; }
+.food-item-heading button { display: inline-flex; gap: 4px; align-items: center; min-height: 40px; font-size: 12px; }
+.food-item-card .adaptive-textarea textarea { min-height: 70px; }
+.food-item-subtotal, .food-analysis-note, .nutrition-label-hint { margin: 0; color: #64745c; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.nutrition-label-hint { background: #eff5e8; padding: 14px; border-radius: 14px; }
+.food-nutrition-edit { border-top: 1px solid #dfe7d8; padding-top: 8px; }
+.food-nutrition-edit summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; cursor: pointer; font-size: 13px; color: #527744; list-style: none; }
+.food-nutrition-edit summary::-webkit-details-marker { display: none; }
+.food-nutrition-edit[open] summary svg { transform: rotate(90deg); }
+.food-nutrition-edit > p { margin: 2px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.food-nutrition-edit > .field-label-custom, .food-nutrition-edit > .macro-input-grid { margin-top: 12px; }
+.food-item-card .macro-input-grid { gap: 8px; }
+.food-item-card .macro-input-grid input { padding: 10px 8px; }
+.add-food-button { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.meal-total-panel { background: #edf5e5; padding: 18px; border-radius: 16px; }
+.meal-total-panel > span { display: block; color: #607653; font-size: 13px; }
+.meal-total-panel > strong { display: block; margin: 6px 0; font-size: 30px; }
+.meal-total-panel small { font-size: 13px; font-weight: 400; }
+.meal-total-panel p { margin: 0; color: #53664a; font-size: 13px; line-height: 1.7; }
+.saved-food-items { display: grid; gap: 10px; }
+.saved-food-items > div { border-bottom: 1px solid #e7ebdf; padding-bottom: 12px; overflow-wrap: anywhere; }
+.saved-food-items strong { font-size: 14px; }
+.meal-sheet .nutrition-label-preview { height: auto; max-height: 340px; object-fit: contain; background: #f6f8f2; }
+.saved-food-items p, .saved-food-items small { margin: 6px 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 
 .meal-photo-placeholder {
   display: grid;

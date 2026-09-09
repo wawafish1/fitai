@@ -24,6 +24,7 @@ import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import { GenderFemale, GenderMale } from "@phosphor-icons/react";
 import "react-circular-progressbar/dist/styles.css";
 import { BottomSheet, KeyboardInput, KeyboardTextarea, MobileScroll, useKeyboard } from "./mobile";
+import { type FoodItem, type FoodItemInput, decimal, itemValid, itemNutrition, sumNutrition, describeItems } from "../server/nutrition.js";
 
 type Tab = "today" | "trends" | "profile";
 type BodyType = "easy-gain" | "balanced" | "easy-lean";
@@ -65,6 +66,8 @@ type Meal = {
   calories: number;
   photoId?: string;
   isDemo?: boolean;
+  items?: FoodItem[];
+  source?: "meal" | "label";
 };
 
 type CheckIn = {
@@ -107,12 +110,14 @@ type AppData = {
 
 type MealDraft = {
   label: string;
-  foods: string;
-  carbs: string;
-  protein: string;
-  fat: string;
+  items: (FoodItemInput & { id: string })[];
+  source: "meal" | "label";
+  note: string;
   previewUrl: string;
 };
+
+const blankFoodItem = () => ({ id: crypto.randomUUID(), name: "", quantity: "", unit: "g" as const, basisAmount: "100", carbs: "", protein: "", fat: "", energyKcal: "" });
+const numericFoodItem = (item: FoodItemInput): FoodItem => ({ name: item.name.trim(), unit: item.unit, quantity: decimal(item.quantity), basisAmount: decimal(item.basisAmount), carbs: decimal(item.carbs), protein: decimal(item.protein), fat: decimal(item.fat), energyKcal: decimal(item.energyKcal) });
 
 type AuthUser = { email: string };
 type AnalysisQuota = { used: number; limit: number };
@@ -363,6 +368,8 @@ function loadData(): AppData {
           calories: clamp(finiteNumber(meal.calories, macroCalories(carbs, protein, fat)), 0, 10_000),
           photoId: typeof meal.photoId === "string" ? meal.photoId : undefined,
           isDemo: meal.isDemo === true,
+          items: Array.isArray(meal.items) ? meal.items.filter(itemValid).map(numericFoodItem) : undefined,
+          source: meal.source === "label" ? "label" : "meal",
         };
       });
     const checkIns = (Array.isArray(parsed.checkIns) ? parsed.checkIns : [])
@@ -502,7 +509,7 @@ function compressPhoto(file: File) {
     const image = new Image();
     const objectUrl = URL.createObjectURL(file);
     image.onload = () => {
-      const maxEdge = 960;
+      const maxEdge = 2048;
       const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -512,10 +519,11 @@ function compressPhoto(file: File) {
         (blob) => {
           URL.revokeObjectURL(objectUrl);
           if (!blob) return reject(new Error("图片压缩失败"));
+          if (blob.size > 4 * 1024 * 1024) return reject(new Error("图片过大，请裁剪后重试"));
           resolve({ blob, url: URL.createObjectURL(blob) });
         },
         "image/jpeg",
-        0.76,
+        0.9,
       );
     };
     image.onerror = () => {
@@ -707,10 +715,9 @@ export default function Prototype() {
   const analysisRequestRef = useRef(0);
   const [mealDraft, setMealDraft] = useState<MealDraft>({
     label: "午餐",
-    foods: "",
-    carbs: "",
-    protein: "",
-    fat: "",
+    items: [],
+    source: "meal",
+    note: "",
     previewUrl: "",
   });
   const [checkInDraft, setCheckInDraft] = useState({
@@ -855,11 +862,10 @@ export default function Prototype() {
   const canReview = daysUntilReview === 0 && missingStageCheckIns === 0;
   const stageWeightChange = stageFirstCheckIn && stageLatestCheckIn ? stageLatestCheckIn.weight - stageFirstCheckIn.weight : 0;
   const stageWaistChange = stageFirstCheckIn && stageLatestCheckIn ? stageLatestCheckIn.waist - stageFirstCheckIn.waist : 0;
-  const mealMacroValues = [mealDraft.carbs, mealDraft.protein, mealDraft.fat].map(Number);
+  const mealTotals = sumNutrition(mealDraft.items);
   const mealDraftValid =
-    Boolean(mealDraft.foods.trim()) &&
-    mealMacroValues.every((value) => Number.isFinite(value) && value >= 0 && value <= 500) &&
-    mealMacroValues.some((value) => value > 0);
+    mealDraft.items.length > 0 && mealDraft.items.length <= 20 && mealDraft.items.every(itemValid)
+    && mealTotals.carbs <= 500 && mealTotals.protein <= 300 && mealTotals.fat <= 300 && mealTotals.calories <= 10000;
   const checkInDraftValid =
     inRange(checkInDraft.weight, 30, 300) && inRange(checkInDraft.waist, 40, 200);
   const draftProfileForEstimate: Profile = {
@@ -895,8 +901,12 @@ export default function Prototype() {
 
   const editMealDraft = (patch: Partial<MealDraft>) => {
     analysisRequestRef.current += 1;
-    setAnalysisMode("manual");
+    if (analysisMode === "analyzing") setAnalysisMode("manual");
     setMealDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const editFoodItem = (id: string, patch: Partial<FoodItemInput>) => {
+    editMealDraft({ items: mealDraft.items.map((item) => item.id === id ? { ...item, ...patch } : item) });
   };
 
   const handlePhoto = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -911,10 +921,9 @@ export default function Prototype() {
       setPhotoBlob(compressed.blob);
       setMealDraft({
         label: new Date().getHours() < 10 ? "早餐" : new Date().getHours() < 16 ? "午餐" : "晚餐",
-        foods: "",
-        carbs: "",
-        protein: "",
-        fat: "",
+        items: [],
+        source: "meal",
+        note: "",
         previewUrl: compressed.url,
       });
       setMealOpen(true);
@@ -924,7 +933,7 @@ export default function Prototype() {
       const form = new FormData();
       form.append("image", compressed.blob, "meal.jpg");
       const response = await fetch(endpoint, { method: "POST", body: form });
-      const result = (await response.json()) as Partial<Meal> & { error?: string; analysis?: AnalysisQuota };
+      const result = (await response.json()) as Partial<Meal> & { error?: string; analysis?: AnalysisQuota; note?: string };
       if (!response.ok) {
         if (response.status === 429) setMealError("今天的 10 次 AI 识别额度已用完，明天零点后恢复。");
         else if (response.status === 401) setMealError("登录状态已过期，请重新登录。");
@@ -932,32 +941,33 @@ export default function Prototype() {
       }
       if (result.analysis) setQuota(result.analysis);
       if (requestId !== analysisRequestRef.current) return;
-      const analyzedCarbs = clamp(finiteNumber(result.carbs), 0, 500);
-      const analyzedProtein = clamp(finiteNumber(result.protein), 0, 300);
-      const analyzedFat = clamp(finiteNumber(result.fat), 0, 300);
+      if (!Array.isArray(result.items) || !result.items.length) throw new Error("no_food_items");
       setMealDraft((current) => ({
         ...current,
         label: result.label || current.label,
-        foods: result.foods || "",
-        carbs: analyzedCarbs ? String(analyzedCarbs) : "",
-        protein: analyzedProtein ? String(analyzedProtein) : "",
-        fat: analyzedFat ? String(analyzedFat) : "",
+        items: result.items!.map((item) => ({ ...item, id: crypto.randomUUID() })),
+        source: result.source === "label" ? "label" : "meal",
+        note: result.note || "",
       }));
       setAnalysisMode("ai");
-    } catch {
-      if (requestId === analysisRequestRef.current) setAnalysisMode("manual");
+    } catch (error) {
+      if (requestId === analysisRequestRef.current) {
+        setAnalysisMode("manual");
+        if (!mealOpen && error instanceof Error && error.message.includes("图片")) setStorageError(error.message);
+        setMealDraft((current) => ({ ...current, items: current.items.length ? current.items : [blankFoodItem()] }));
+      }
     }
   };
 
   const saveMeal = async () => {
     if (mealSavingRef.current) return;
     if (!mealDraftValid) {
-      setMealError("请填写食物，并至少填写一项有效的三大营养素。");
+      setMealError("请核对每项食物的名称、食用量、营养基准及三大营养素；没有的营养素填 0。");
       return;
     }
     mealSavingRef.current = true;
     setMealSaving(true);
-    const [carbs, protein, fat] = mealMacroValues;
+    const { carbs, protein, fat, calories } = mealTotals;
     const id = `meal-${Date.now()}`;
     try {
       if (photoBlob) {
@@ -977,12 +987,14 @@ export default function Prototype() {
       id,
       date: today,
       label: mealDraft.label,
-      foods: mealDraft.foods.trim(),
+      foods: describeItems(mealDraft.items),
+      items: mealDraft.items.map(numericFoodItem),
+      source: mealDraft.source,
       time: `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
       carbs,
       protein,
       fat,
-      calories: macroCalories(carbs, protein, fat),
+      calories,
       photoId: photoBlob ? id : undefined,
     };
     const firstRealEntry = data.demoMode;
@@ -1746,13 +1758,17 @@ export default function Prototype() {
           {photoUrls[viewedMeal.id] || viewedMeal.isDemo ? <img className="meal-detail-photo" src={photoUrls[viewedMeal.id] || "/assets/meal-lunch.png"} alt={`${viewedMeal.label}餐食照片`} draggable={false} /> : <div className="meal-detail-no-photo"><CameraIcon /><span>照片暂不可用，餐食信息仍可查看。</span></div>}
           {viewedMeal.isDemo && <p className="section-kicker">示例餐食</p>}
           <div className="meal-detail-foods"><h3>食物与份量</h3><p>{viewedMeal.foods}</p></div>
+          {viewedMeal.items?.length ? <div className="saved-food-items">{viewedMeal.items.map((item, index) => {
+            const values = itemNutrition(item);
+            return <div key={index}><strong>{item.name} · {item.quantity}{item.unit}</strong><p>碳水 {values.carbs.toFixed(1)}g · 蛋白质 {values.protein.toFixed(1)}g · 脂肪 {values.fat.toFixed(1)}g</p><small>{Math.round(values.calories)} kcal · 营养基准每 {item.basisAmount}{item.unit}</small></div>;
+          })}</div> : null}
           <dl className="meal-detail-macros">
             <div><dt>热量</dt><dd>{viewedMeal.calories}<small> kcal</small></dd></div>
             <div><dt>碳水</dt><dd>{viewedMeal.carbs}<small> g</small></dd></div>
             <div><dt>蛋白质</dt><dd>{viewedMeal.protein}<small> g</small></dd></div>
             <div><dt>脂肪</dt><dd>{viewedMeal.fat}<small> g</small></dd></div>
           </dl>
-          <p className="meal-detail-note">以上为保存时确认的估算值，本页不支持修改。</p>
+          <p className="meal-detail-note">{viewedMeal.source === "label" ? "以上按确认的营养表与食用量计算，本页不支持修改。" : "以上为保存时确认的估算值，本页不支持修改。"}</p>
           <button className="primary-button" onClick={() => setViewedMealId(null)}>关闭详情</button>
         </div>}
       </BottomSheet>
@@ -1763,35 +1779,51 @@ export default function Prototype() {
           if (keyboard.visible) keyboard.hide();
         }
         setMealOpen(open);
-      }} title="确认这一餐" description="照片只能辅助估算，请核对份量、用油和调味。" snap={0.9}>
+      }} title="确认这一餐" description="逐项核对食物和食用量，修改后自动汇总。" snap={0.9}>
         <div className="sheet-form meal-sheet">
           <button className="sheet-cancel" onClick={() => {
             analysisRequestRef.current += 1;
             if (keyboard.visible) keyboard.hide();
             setMealOpen(false);
           }}><Cross2Icon />取消</button>
-          {mealDraft.previewUrl && <img className="meal-preview" src={mealDraft.previewUrl} alt="待记录餐食" draggable={false} />}
+          {mealDraft.previewUrl && <img className={`meal-preview ${mealDraft.source === "label" ? "nutrition-label-preview" : ""}`} src={mealDraft.previewUrl} alt={mealDraft.source === "label" ? "待核对营养表" : "待记录餐食"} draggable={false} />}
           <div className={`analysis-status ${analysisMode}`}>
-            {analysisMode === "analyzing" && <><ReloadIcon className="spin" />正在尝试 AI 识别…</>}
-            {analysisMode === "ai" && <><CheckCircledIcon />AI 已给出初步估算，请确认</>}
+            {analysisMode === "analyzing" && <><ReloadIcon className="spin" />正在高清识别食物或营养表…</>}
+            {analysisMode === "ai" && <><CheckCircledIcon />{mealDraft.source === "label" ? "已读取营养表，请核对单位与食用量" : "已逐项估算，修改份量后自动汇总"}</>}
             {analysisMode === "manual" && <><InfoCircledIcon />AI 识别暂时失败，请手动填写</>}
           </div>
+          <fieldset className="meal-confirm-fields" disabled={mealSaving || analysisMode === "analyzing"}>
           <div className="choice-row meal-type-row">
             {["早餐", "午餐", "晚餐", "加餐"].map((label) => <button key={label} aria-pressed={mealDraft.label === label} className={mealDraft.label === label ? "selected" : ""} onClick={() => editMealDraft({ label })}>{label}</button>)}
           </div>
-          <label className="field-label-custom">识别到的食物<AdaptiveTextarea rows={4} placeholder="例如：米饭约 200 克、鸡胸肉约 150 克、西兰花约 100 克" value={mealDraft.foods} onChange={(event) => editMealDraft({ foods: event.target.value })} /></label>
-          <div className="macro-input-grid">
-            {([
-              ["carbs", "碳水"],
-              ["protein", "蛋白质"],
-              ["fat", "脂肪"],
-            ] as [MacroKey, string][]).map(([key, label]) => (
-              <label className="field-label-custom" key={key}>{label} g<AdaptiveInput inputMode="decimal" placeholder="0" value={mealDraft[key]} onChange={(event) => editMealDraft({ [key]: event.target.value })} /></label>
-            ))}
+          {mealDraft.source === "label" && <p className="nutrition-label-hint">标签上的“每100克 / 每份”是计算基准，不一定是你吃的量。请确认下方食用量；能量优先按标签换算，千焦 kJ 会转换为千卡 kcal。</p>}
+          {mealDraft.note && <p className="food-analysis-note">{mealDraft.note}</p>}
+          <div className="food-item-list">
+            {mealDraft.items.map((item, index) => {
+              const values = itemNutrition(item);
+              return <section className="food-item-card" key={item.id} aria-label={`食物 ${index + 1}`}>
+                <div className="food-item-heading"><span>食物 {index + 1}</span><button type="button" className="text-button" onClick={() => { keyboard.hide(); editMealDraft({ items: mealDraft.items.filter((entry) => entry.id !== item.id) }); }} aria-label={`移除食物 ${index + 1}`}><Cross2Icon />移除</button></div>
+                <label className="field-label-custom">食物名称<AdaptiveTextarea rows={2} value={item.name} placeholder="例如：熟米饭 / 鸡腿 / 便利店便当" onChange={(event) => editFoodItem(item.id, { name: event.target.value })} /></label>
+                <label className="field-label-custom">吃了多少（{item.unit}）<AdaptiveInput inputMode="decimal" value={item.quantity ?? ""} placeholder="填写实际食用量" onChange={(event) => editFoodItem(item.id, { quantity: event.target.value })} /></label>
+                <p className="food-item-subtotal">{itemValid(item) ? `本项 ${Math.round(values.calories)} kcal · 碳 ${values.carbs.toFixed(1)} / 蛋 ${values.protein.toFixed(1)} / 脂 ${values.fat.toFixed(1)} g` : "待补全食用量和营养数据，未知项请核对后填写"}</p>
+                <details className="food-nutrition-edit" open={mealDraft.source === "label"}>
+                  <summary>核对营养基准 · 每 {item.basisAmount || "？"}{item.unit}<ChevronRightIcon /></summary>
+                  <p>下方营养对应基准量，修改食用量会按比例换算。</p>
+                  <div className="choice-row food-unit-row" aria-label={`食物 ${index + 1} 的计量单位`}>{(["g", "ml", "份"] as const).map((unit) => <button type="button" key={unit} aria-pressed={item.unit === unit} className={item.unit === unit ? "selected" : ""} onClick={() => editFoodItem(item.id, { unit })}>{unit === "g" ? "克 g" : unit === "ml" ? "毫升 ml" : "份"}</button>)}</div>
+                  <label className="field-label-custom">营养基准量（{item.unit}）<AdaptiveInput inputMode="decimal" value={item.basisAmount ?? ""} placeholder={item.unit === "份" ? "例如：1" : "例如：100"} onChange={(event) => editFoodItem(item.id, { basisAmount: event.target.value })} /></label>
+                  <div className="macro-input-grid">{([["carbs", "碳水"], ["protein", "蛋白质"], ["fat", "脂肪"]] as [MacroKey, string][]).map(([key, name]) => <label className="field-label-custom" key={key}>{name} g<AdaptiveInput inputMode="decimal" value={item[key] ?? ""} placeholder="待核对" onChange={(event) => editFoodItem(item.id, { [key]: event.target.value })} /></label>)}</div>
+                  <label className="field-label-custom">基准量能量 kcal（可选）<AdaptiveInput inputMode="decimal" value={item.energyKcal ?? ""} placeholder="不填则按三大营养素计算" onChange={(event) => editFoodItem(item.id, { energyKcal: event.target.value })} /></label>
+                </details>
+              </section>;
+            })}
           </div>
+          <button type="button" className="secondary-button add-food-button" disabled={mealDraft.items.length >= 20} onClick={() => editMealDraft({ items: [...mealDraft.items, blankFoodItem()] })}><PlusIcon />添加食物</button>
+          </fieldset>
+          <div className="meal-total-panel" aria-live="polite"><span>{mealDraftValid ? "本餐合计" : "已填写完整的项目小计"}</span><strong>{mealTotals.calories} <small>kcal</small></strong><p>碳水 {mealTotals.carbs}g · 蛋白质 {mealTotals.protein}g · 脂肪 {mealTotals.fat}g</p></div>
+          {!mealDraftValid && analysisMode !== "analyzing" && <p className="food-analysis-note">请补全各项后保存：食用量和基准量须大于 0，三大营养素没有的填 0，并核对是否超出合理餐量。</p>}
           {mealError && <p className="form-error" role="alert">{mealError}</p>}
           {keyboard.visible && <button className="sheet-keyboard-dismiss" onClick={keyboard.hide}>完成填写</button>}
-          <button className="primary-button" onClick={saveMeal} disabled={!mealDraftValid || mealSaving}>{mealSaving ? "正在保存…" : "保存这餐"}</button>
+          <button className="primary-button" onClick={saveMeal} disabled={!mealDraftValid || mealSaving || analysisMode === "analyzing"}>{mealSaving ? "正在保存…" : "保存这餐"}</button>
         </div>
       </BottomSheet>
 
