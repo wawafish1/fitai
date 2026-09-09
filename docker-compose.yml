@@ -7,27 +7,13 @@ services:
       - fitai_data:/app/data
     networks:
       - web
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      - web
-    depends_on:
-      - app
+      - shared_proxy
 
 networks:
   web:
+  shared_proxy:
+    external: true
+    name: writing-assistant-proxy
 
 volumes:
   fitai_data:
-  caddy_data:
-  caddy_config:
-

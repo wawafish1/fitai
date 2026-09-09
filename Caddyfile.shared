@@ -1,0 +1,12 @@
+{$APP_DOMAIN}, www.{$APP_DOMAIN} {
+    reverse_proxy writing-assistant:8010
+}
+
+video.{$APP_DOMAIN} {
+    reverse_proxy video-to-x-article:54810
+}
+
+app.fitai.website {
+    encode zstd gzip
+    reverse_proxy fitai-app-1:3000
+}
